@@ -12,58 +12,62 @@
     .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 10px; flex-wrap: wrap; }
     .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     
-    button { cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; font-weight: 500; }
+    button { cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; font-weight: 500; font-size: 0.9rem; }
     button:hover { background: #f1f5f9; }
-    button.primary { background: #2563eb; color: white; border: none; }
+    button.primary { background: #2563eb; color: white; border: none; font-weight: 600; }
     button.primary:hover { background: #1d4ed8; }
-    button.danger { background: #ef4444; color: white; border: none; padding: 4px 8px; font-size: 0.8rem; }
-    button.active { background: #e2e8f0; font-weight: bold; border-color: #94a3b8; }
+    button.danger { background: #ef4444; color: white; border: none; padding: 6px 10px; font-size: 0.8rem; border-radius: 4px; }
+    button.danger:hover { background: #dc2626; }
+    button.active { background: #2563eb; color: white; border-color: #2563eb; font-weight: bold; }
 
-    .edit-mode-toggle { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer; background: #f1f5f9; padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; }
+    .edit-mode-toggle { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; background: #f1f5f9; padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; user-select: none; }
 
     .calendar-grid { display: grid; gap: 8px; margin-top: 10px; }
     .grid-week { grid-template-columns: 60px repeat(7, 1fr); }
     .grid-day { grid-template-columns: 60px 1fr; }
     
-    .time-slot { border-top: 1px dashed #e2e8f0; min-height: 52px; display: flex; align-items: center; justify-content: center; position: relative; }
-    .time-label { font-size: 0.75rem; color: #64748b; text-align: right; padding-right: 8px; border: none; }
+    .time-slot { border-top: 1px dashed #e2e8f0; min-height: 58px; display: flex; align-items: center; justify-content: center; position: relative; }
+    .time-label { font-size: 0.8rem; color: #64748b; font-weight: 600; justify-content: flex-end; padding-right: 10px; border: none; }
     
-    .day-header { font-weight: bold; text-align: center; padding: 8px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; }
-    .day-header.today { background: #dbeafe; border-color: #3b82f6; color: #1e40af; }
+    .day-header { font-weight: bold; text-align: center; padding: 10px 4px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; }
+    .day-header.today { background: #dbeafe !important; border: 2px solid #2563eb !important; color: #1e40af !important; }
     
-    .slot-free { border: 1px dashed #cbd5e1; border-radius: 4px; color: #94a3b8; font-size: 0.75rem; height: 100%; width: 100%; display: flex; align-items: center; justify-content: center; background: #fafafa; }
+    .slot-free { border: 1px dashed #cbd5e1; border-radius: 6px; color: #94a3b8; font-size: 0.75rem; height: 100%; width: 100%; display: flex; align-items: center; justify-content: center; background: #fafafa; }
     .slot-free.drag-over { background: #e0e7ff; border-color: #6366f1; }
     
-    .lesson-card { width: 100%; height: 100%; border-radius: 4px; padding: 4px 6px; color: white; font-size: 0.8rem; display: flex; flex-direction: column; justify-content: space-between; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.12); position: relative; }
+    .lesson-card { width: 100%; height: 100%; border-radius: 6px; padding: 6px 8px; color: white; font-size: 0.8rem; display: flex; flex-direction: column; justify-content: space-between; cursor: grab; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative; transition: transform 0.1s; }
+    .lesson-card:hover { transform: translateY(-1px); }
     .lesson-card:active { cursor: grabbing; }
-    .lesson-badges { display: flex; gap: 4px; margin-top: 2px; font-size: 0.7rem; }
-    .badge { padding: 1px 4px; border-radius: 3px; background: rgba(0,0,0,0.25); }
+    .lesson-badges { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+    .badge { padding: 2px 5px; border-radius: 3px; font-size: 0.68rem; font-weight: 600; }
 
-    .month-cell { border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; min-height: 90px; background: #fff; font-size: 0.8rem; }
-    .month-cell.today { background: #eff6ff; border-color: #3b82f6; }
+    .month-cell { border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px; min-height: 100px; background: #fff; font-size: 0.8rem; display: flex; flex-direction: column; gap: 4px; }
+    .month-cell.today { background: #eff6ff !important; border: 2px solid #2563eb !important; }
 
-    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
     .modal.hidden { display: none; }
-    .modal-content { background: #fff; padding: 20px; border-radius: 8px; max-width: 450px; width: 100%; max-height: 90vh; overflow-y: auto; }
-    .form-group { margin-bottom: 12px; }
-    .form-group label { display: block; margin-bottom: 4px; font-weight: 600; font-size: 0.9rem; }
-    .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
-    .flex-row { display: flex; gap: 8px; align-items: center; }
+    .modal-content { background: #fff; padding: 24px; border-radius: 12px; max-width: 460px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
     
-    .student-item { display: flex; justify-content: space-between; align-items: center; padding: 6px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 6px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.88rem; color: #334155; }
+    .form-group input, .form-group select { width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; outline: none; }
+    .form-group input:focus, .form-group select:focus { border-color: #2563eb; }
+    .flex-row { display: flex; gap: 10px; align-items: center; }
+    
+    .student-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; background: #f8fafc; gap: 8px; }
   </style>
 </head>
 <body>
 
   <div class="header">
-    <h1 style="margin:0; font-size: 1.5rem;">Розклад занять</h1>
+    <h1 style="margin:0; font-size: 1.5rem; font-weight: 700; color: #0f172a;">Розклад занять</h1>
     <div class="controls">
       <button id="today-btn">Сьогодні</button>
       <button id="prev-date-btn">&lt;</button>
-      <span id="current-date-display" style="font-weight: bold; min-width: 140px; text-align: center;"></span>
+      <span id="current-date-display" style="font-weight: 700; min-width: 150px; text-align: center; font-size: 0.95rem;"></span>
       <button id="next-date-btn">&gt;</button>
       
-      <div style="margin-left: 10px; display: flex; gap: 4px;">
+      <div style="margin-left: 6px; display: flex; gap: 4px;">
         <button id="view-day-btn">День</button>
         <button id="view-week-btn">Тиждень</button>
         <button id="view-month-btn">Місяць</button>
@@ -83,14 +87,14 @@
   <!-- Модальне вікно учнів -->
   <div id="students-modal" class="modal hidden">
     <div class="modal-content">
-      <h2 style="margin-top:0;">Управління учнями</h2>
+      <h2 style="margin-top:0; font-size:1.3rem;">Управління учнями</h2>
       <div class="form-group flex-row">
         <input type="text" id="new-student-name" placeholder="Ім'я учня" style="flex:1;">
-        <input type="color" id="new-student-color" value="#3b82f6" style="width: 40px; height: 36px; padding:0;">
+        <input type="color" id="new-student-color" value="#3b82f6" style="width: 42px; height: 38px; padding:0; border:none; cursor:pointer;">
         <button id="add-student-btn" type="button" class="primary">Додати</button>
       </div>
-      <div id="students-list" style="margin-top: 15px;"></div>
-      <div style="text-align: right; margin-top: 15px;">
+      <div id="students-list" style="margin-top: 15px; max-height: 300px; overflow-y: auto;"></div>
+      <div style="text-align: right; margin-top: 20px;">
         <button id="close-students-modal-btn">Закрити</button>
       </div>
     </div>
@@ -99,7 +103,7 @@
   <!-- Модальне вікно додавання/редагування уроку -->
   <div id="lesson-modal" class="modal hidden">
     <div class="modal-content">
-      <h2 style="margin-top:0;" id="lesson-modal-title">Додати урок</h2>
+      <h2 style="margin-top:0; font-size:1.3rem;" id="lesson-modal-title">Додати урок</h2>
       
       <div class="form-group">
         <label>Оберіть учня</label>
@@ -124,14 +128,14 @@
 
       <div class="form-group flex-row">
         <div style="flex:1;">
-          <label>Статус оплати</label>
+          <label>Оплата</label>
           <select id="lesson-paid-select">
-            <option value="false">Ні (Не оплачено)</option>
-            <option value="true">Так (Оплачено)</option>
+            <option value="false">Не оплачено</option>
+            <option value="true">Оплачено</option>
           </select>
         </div>
         <div style="flex:1;">
-          <label>Статус проведення</label>
+          <label>Статус</label>
           <select id="lesson-status-select">
             <option value="planned">Запланований</option>
             <option value="completed">Відбувся</option>
@@ -150,7 +154,7 @@
         </select>
       </div>
 
-      <div class="flex-row" style="justify-content: flex-end; margin-top: 20px;">
+      <div class="flex-row" style="justify-content: flex-end; margin-top: 24px;">
         <button id="close-lesson-modal-btn" type="button">Скасувати</button>
         <button id="save-lesson-btn" type="button" class="primary">Зберегти</button>
       </div>
