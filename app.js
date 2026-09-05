@@ -1,12 +1,12 @@
 const SUPABASE_URL = "https://vjjrwvraannccejyqcci.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_XYvCzMPGQjhT0AT2r2v3dw_zZIesIJB";
 
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
 
 let state = {
   key: null,
   students: [],
-  lessons: [], // Масив уроків: { id, studentId, date: 'YYYY-MM-DD', time: 'HH:MM', paid: false, completed: 'planned' }
+  lessons: [],
   currentDate: new Date(),
   view: 'week',
   isEditMode: false,
@@ -24,7 +24,6 @@ const elements = {
   viewMonthBtn: document.getElementById('view-month-btn'),
   editModeCheckbox: document.getElementById('edit-mode-checkbox'),
   
-  // Учні
   manageStudentsBtn: document.getElementById('manage-students-btn'),
   studentsModal: document.getElementById('students-modal'),
   closeStudentsModalBtn: document.getElementById('close-students-modal-btn'),
@@ -33,7 +32,6 @@ const elements = {
   addStudentBtn: document.getElementById('add-student-btn'),
   studentsList: document.getElementById('students-list'),
 
-  // Уроки
   addLessonBtn: document.getElementById('add-lesson-btn'),
   lessonModal: document.getElementById('lesson-modal'),
   lessonModalTitle: document.getElementById('lesson-modal-title'),
@@ -54,14 +52,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
 
   const urlParams = new URLSearchParams(window.location.search);
-  state.key = urlParams.get('key');
+  state.key = urlParams.get('key') || 'default_schedule';
 
-  if (!state.key) {
-    await createNewSchedule();
-  } else {
-    await loadSchedule();
-  }
-
+  await loadSchedule();
   render();
 });
 
@@ -87,33 +80,48 @@ function initTimeOptions() {
   }
 }
 
-async function createNewSchedule() {
-  try {
-    const { data, error } = await db.rpc('create_schedule');
-    if (error) throw error;
-    state.key = data.access_token;
-    window.history.replaceState({}, '', `${window.location.origin}${window.location.pathname}?key=${state.key}`);
-  } catch (err) { console.error(err); }
-}
-
 async function loadSchedule() {
-  try {
-    const { data, error } = await db.rpc('get_schedule', { p_access_token: state.key });
-    if (error) throw error;
-    if (data && data.data) {
-      state.students = data.data.students || [];
-      state.lessons = data.data.lessons || [];
+  let loaded = false;
+
+  if (db && state.key) {
+    try {
+      const { data, error } = await db.rpc('get_schedule', { p_access_token: state.key });
+      if (!error && data && data.data) {
+        state.students = data.data.students || [];
+        state.lessons = data.data.lessons || [];
+        loaded = true;
+      }
+    } catch (e) {
+      console.warn('Supabase offline or RPC failed, loading from localStorage.');
     }
-  } catch (err) { console.error(err); }
+  }
+
+  if (!loaded) {
+    const local = localStorage.getItem('schedule_' + state.key);
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        state.students = parsed.students || [];
+        state.lessons = parsed.lessons || [];
+      } catch (e) { console.error(e); }
+    }
+  }
 }
 
 async function saveSchedule() {
-  try {
-    await db.rpc('save_schedule', {
-      p_access_token: state.key,
-      p_data: { students: state.students, lessons: state.lessons }
-    });
-  } catch (err) { console.error(err); }
+  const payload = { students: state.students, lessons: state.lessons };
+  localStorage.setItem('schedule_' + state.key, JSON.stringify(payload));
+
+  if (db && state.key) {
+    try {
+      await db.rpc('save_schedule', {
+        p_access_token: state.key,
+        p_data: payload
+      });
+    } catch (e) {
+      console.warn('Supabase save failed, stored in LocalStorage.');
+    }
+  }
 }
 
 function render() {
@@ -147,19 +155,35 @@ function updateDateDisplay() {
 function renderStudentsList() {
   elements.studentsList.innerHTML = '';
   if (state.students.length === 0) {
-    elements.studentsList.innerHTML = '<div style="color:#64748b; font-size:0.9rem;">Спискок порожній</div>';
+    elements.studentsList.innerHTML = '<div style="color:#64748b; font-size:0.88rem; text-align:center; padding:12px;">Список учнів порожній. Додайте першого учня вище.</div>';
     return;
   }
+
   state.students.forEach(student => {
     const item = document.createElement('div');
     item.className = 'student-item';
-    item.innerHTML = `
-      <div style="display:flex; align-items:center; gap:8px;">
-        <input type="color" value="${student.color}" onchange="updateStudent('${student.id}', 'color', this.value)" style="width:24px; height:24px; border:none; padding:0; cursor:pointer;">
-        <input type="text" value="${student.name}" onchange="updateStudent('${student.id}', 'name', this.value)" style="border:none; background:transparent; font-weight:bold; width: 180px;">
-      </div>
-      <button class="danger" onclick="deleteStudent('${student.id}')">Видалити</button>
-    `;
+
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.value = student.color || '#3b82f6';
+    colorInput.style.cssText = 'width:32px; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;';
+    colorInput.onchange = (e) => updateStudent(student.id, 'color', e.target.value);
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = student.name || '';
+    nameInput.style.cssText = 'flex:1; padding:6px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:600; font-size:0.9rem;';
+    nameInput.onchange = (e) => updateStudent(student.id, 'name', e.target.value);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'danger';
+    deleteBtn.textContent = 'Видалити';
+    deleteBtn.onclick = () => deleteStudent(student.id);
+
+    item.appendChild(colorInput);
+    item.appendChild(nameInput);
+    item.appendChild(deleteBtn);
+
     elements.studentsList.appendChild(item);
   });
 }
@@ -174,21 +198,22 @@ function updateStudentSelectOptions() {
   });
 }
 
-window.updateStudent = async (id, field, value) => {
-  const student = state.students.find(s => s.id === id);
+async function updateStudent(id, field, value) {
+  const student = state.students.find(s => String(s.id) === String(id));
   if (student) {
     student[field] = value;
     await saveSchedule();
     render();
   }
-};
+}
 
-window.deleteStudent = async (id) => {
-  state.students = state.students.filter(s => s.id !== id);
-  state.lessons = state.lessons.filter(l => l.studentId !== id);
+async function deleteStudent(id) {
+  if (!confirm('Видалити учня та всі його уроки?')) return;
+  state.students = state.students.filter(s => String(s.id) !== String(id));
+  state.lessons = state.lessons.filter(l => String(l.studentId) !== String(id));
   await saveSchedule();
   render();
-};
+}
 
 function getStartOfWeek(d) {
   const date = new Date(d);
@@ -246,7 +271,7 @@ function renderGrid() {
 
   for (let h = startHour; h <= endHour; h++) {
     const timeStr = `${String(h).padStart(2, '0')}:00`;
-    
+
     const timeLabel = document.createElement('div');
     timeLabel.className = 'time-slot time-label';
     timeLabel.textContent = timeStr;
@@ -256,11 +281,15 @@ function renderGrid() {
       const dateISO = formatDateISO(date);
       const slot = document.createElement('div');
       slot.className = 'time-slot';
-      
-      const lesson = state.lessons.find(l => l.date === dateISO && l.time.startsWith(String(h).padStart(2, '0')));
+
+      const lesson = state.lessons.find(l => {
+        if (l.date !== dateISO) return false;
+        const lHour = parseInt((l.time || '00:00').split(':')[0], 10);
+        return lHour === h;
+      });
 
       if (lesson) {
-        const student = state.students.find(s => s.id === lesson.studentId);
+        const student = state.students.find(s => String(s.id) === String(lesson.studentId));
         const card = document.createElement('div');
         card.className = 'lesson-card';
         card.style.backgroundColor = student ? student.color : '#3b82f6';
@@ -270,16 +299,18 @@ function renderGrid() {
         const isCompleted = lesson.status === 'completed';
 
         card.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>${lesson.time} ${student ? student.name : ''}</strong>
-            <span style="cursor:pointer; font-size:1.1rem; line-height:1;" onclick="event.stopPropagation(); deleteLesson('${lesson.id}')">&times;</span>
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:4px;">
+            <span style="font-weight:bold; font-size:0.83rem; line-height:1.2;">
+              ${lesson.time} ${student ? student.name : 'Учень'}
+            </span>
+            <span title="Видалити" style="cursor:pointer; font-size:1.1rem; line-height:0.8; opacity:0.8;" onclick="event.stopPropagation(); deleteLesson('${lesson.id}')">&times;</span>
           </div>
           <div class="lesson-badges">
-            <span class="badge" style="background:${isPaid ? '#22c55e' : '#ef4444'}">${isPaid ? 'Оплачено' : 'Ні'}</span>
-            <span class="badge">${isCompleted ? 'Відбувся' : 'План'}</span>
+            <span class="badge" style="background:${isPaid ? '#16a34a' : '#dc2626'}">${isPaid ? 'Оплачено' : 'Не опл.'}</span>
+            <span class="badge" style="background:${isCompleted ? '#475569' : '#2563eb'}">${isCompleted ? 'Відбувся' : 'Заплан.'}</span>
           </div>
         `;
-        
+
         card.onclick = () => openEditLessonModal(lesson.id);
         card.ondragstart = (e) => e.dataTransfer.setData('text/plain', lesson.id);
         slot.appendChild(card);
@@ -311,8 +342,10 @@ function renderMonthView() {
 
   const year = state.currentDate.getFullYear();
   const month = state.currentDate.getMonth();
+
   const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
+  const startDayOfWeek = (firstDay.getDay() + 6) % 7;
+  const totalDays = new Date(year, month + 1, 0).getDate();
 
   const daysNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
   daysNames.forEach(name => {
@@ -322,37 +355,68 @@ function renderMonthView() {
     elements.calendarGrid.appendChild(h);
   });
 
-  let startDay = (firstDay.getDay() + 6) % 7;
-  for (let i = 0; i < startDay; i++) {
-    const empty = document.createElement('div');
-    empty.style.cssText = 'background:#f1f5f9; min-height:90px; border-radius:6px; opacity:0.5;';
-    elements.calendarGrid.appendChild(empty);
+  const prevMonthLastDay = new Date(year, month, 0).getDate();
+  for (let i = startDayOfWeek - 1; i >= 0; i--) {
+    const cell = document.createElement('div');
+    cell.className = 'month-cell';
+    cell.style.cssText = 'opacity: 0.4; background: #f1f5f9; border-color: #e2e8f0;';
+    cell.innerHTML = `<div style="font-weight:bold; color:#94a3b8; text-align:right;">${prevMonthLastDay - i}</div>`;
+    elements.calendarGrid.appendChild(cell);
   }
 
-  for (let day = 1; day <= lastDay.getDate(); day++) {
+  for (let day = 1; day <= totalDays; day++) {
     const d = new Date(year, month, day);
     const dateISO = formatDateISO(d);
-    
+
     const cell = document.createElement('div');
     cell.className = `month-cell ${isToday(d) ? 'today' : ''}`;
-    cell.innerHTML = `<div style="font-weight:bold; color:#64748b; text-align:right;">${day}</div>`;
+    cell.innerHTML = `<div style="font-weight:bold; ${isToday(d) ? 'color:#1d4ed8;' : 'color:#475569;'} text-align:right;">${day}</div>`;
 
     const dayLessons = state.lessons.filter(l => l.date === dateISO);
     dayLessons.forEach(l => {
-      const s = state.students.find(st => st.id === l.studentId);
+      const s = state.students.find(st => String(st.id) === String(l.studentId));
       const tag = document.createElement('div');
-      tag.style.cssText = `background:${s ? s.color : '#3b82f6'}; color:white; padding:2px 4px; border-radius:3px; margin-top:2px; font-size:0.75rem; cursor:pointer;`;
-      tag.textContent = `${l.time} ${s ? s.name : ''}`;
-      tag.onclick = () => openEditLessonModal(l.id);
+      const isPaid = l.paid === true || l.paid === 'true';
+
+      tag.style.cssText = `
+        background: ${s ? s.color : '#3b82f6'};
+        color: white;
+        padding: 3px 6px;
+        border-radius: 4px;
+        font-size: 0.72rem;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      `;
+      tag.innerHTML = `
+        <span><strong>${l.time}</strong> ${s ? s.name : ''}</span>
+        <span style="font-size:0.65rem; background:rgba(0,0,0,0.25); padding:1px 4px; border-radius:2px;">${isPaid ? '✓' : '✗'}</span>
+      `;
+      tag.onclick = (e) => {
+        e.stopPropagation();
+        openEditLessonModal(l.id);
+      };
       cell.appendChild(tag);
     });
 
     elements.calendarGrid.appendChild(cell);
   }
+
+  const totalCells = startDayOfWeek + totalDays;
+  const remaining = (7 - (totalCells % 7)) % 7;
+  for (let i = 1; i <= remaining; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'month-cell';
+    cell.style.cssText = 'opacity: 0.4; background: #f1f5f9; border-color: #e2e8f0;';
+    cell.innerHTML = `<div style="font-weight:bold; color:#94a3b8; text-align:right;">${i}</div>`;
+    elements.calendarGrid.appendChild(cell);
+  }
 }
 
 async function moveLesson(lessonId, newDate, newTime) {
-  const lesson = state.lessons.find(l => l.id === lessonId);
+  const lesson = state.lessons.find(l => String(l.id) === String(lessonId));
   if (lesson) {
     lesson.date = newDate;
     lesson.time = newTime;
@@ -362,24 +426,26 @@ async function moveLesson(lessonId, newDate, newTime) {
 }
 
 window.deleteLesson = async (lessonId) => {
-  state.lessons = state.lessons.filter(l => l.id !== lessonId);
+  state.lessons = state.lessons.filter(l => String(l.id) !== String(lessonId));
   await saveSchedule();
   render();
 };
 
 function openEditLessonModal(lessonId) {
-  const lesson = state.lessons.find(l => l.id === lessonId);
+  const lesson = state.lessons.find(l => String(l.id) === String(lessonId));
   if (!lesson) return;
 
   state.editingLessonId = lessonId;
   elements.lessonModalTitle.textContent = 'Редагувати урок';
+
+  updateStudentSelectOptions();
   elements.lessonStudentSelect.value = lesson.studentId;
   elements.lessonDateInput.value = lesson.date;
 
-  const [h, m] = lesson.time.split(':');
-  elements.lessonHourSelect.value = h;
-  elements.lessonMinuteSelect.value = m;
-  
+  const parts = (lesson.time || '18:00').split(':');
+  elements.lessonHourSelect.value = String(parts[0]).padStart(2, '0');
+  elements.lessonMinuteSelect.value = String(parts[1]).padStart(2, '0');
+
   elements.lessonPaidSelect.value = String(lesson.paid);
   elements.lessonStatusSelect.value = lesson.status || 'planned';
 
@@ -395,11 +461,14 @@ function setupEventListeners() {
 
   elements.manageStudentsBtn.onclick = () => elements.studentsModal.classList.remove('hidden');
   elements.closeStudentsModalBtn.onclick = () => elements.studentsModal.classList.add('hidden');
-  
+
   elements.addStudentBtn.onclick = async () => {
     const name = elements.newStudentName.value.trim();
     const color = elements.newStudentColor.value;
-    if (!name) return;
+    if (!name) {
+      alert("Будь ласка, введіть ім'я учня!");
+      return;
+    }
 
     state.students.push({ id: Date.now().toString(), name, color });
     elements.newStudentName.value = '';
@@ -409,29 +478,41 @@ function setupEventListeners() {
 
   elements.addLessonBtn.onclick = () => {
     if (state.students.length === 0) {
-      alert('Спочатку додайте хоча б одного учня!');
+      alert('Спочатку додайте хоча б одного учня в меню "Учні"!');
+      elements.studentsModal.classList.remove('hidden');
       return;
     }
     state.editingLessonId = null;
     elements.lessonModalTitle.textContent = 'Додати урок';
+    updateStudentSelectOptions();
     elements.lessonDateInput.value = formatDateISO(state.currentDate);
+    elements.lessonHourSelect.value = '18';
+    elements.lessonMinuteSelect.value = '00';
+    elements.lessonPaidSelect.value = 'false';
+    elements.lessonStatusSelect.value = 'planned';
     elements.repeatGroup.style.display = 'block';
     elements.lessonModal.classList.remove('hidden');
   };
-  
+
   elements.closeLessonModalBtn.onclick = () => elements.lessonModal.classList.add('hidden');
 
   elements.saveLessonBtn.onclick = async () => {
     const studentId = elements.lessonStudentSelect.value;
     const baseDateStr = elements.lessonDateInput.value;
-    const time = `${elements.lessonHourSelect.value}:${elements.lessonMinuteSelect.value}`;
+    const hour = elements.lessonHourSelect.value;
+    const minute = elements.lessonMinuteSelect.value;
     const paid = elements.lessonPaidSelect.value === 'true';
     const status = elements.lessonStatusSelect.value;
 
-    if (!studentId || !baseDateStr) return;
+    if (!studentId || !baseDateStr) {
+      alert('Заповніть усі поля!');
+      return;
+    }
+
+    const time = `${hour}:${minute}`;
 
     if (state.editingLessonId) {
-      const lesson = state.lessons.find(l => l.id === state.editingLessonId);
+      const lesson = state.lessons.find(l => String(l.id) === String(state.editingLessonId));
       if (lesson) {
         lesson.studentId = studentId;
         lesson.date = baseDateStr;
@@ -440,15 +521,13 @@ function setupEventListeners() {
         lesson.status = status;
       }
     } else {
-      const repeatCount = parseInt(elements.lessonRepeatSelect.value, 10);
-      const baseDate = new Date(baseDateStr);
+      const repeatCount = parseInt(elements.lessonRepeatSelect.value, 10) || 1;
+      const [y, m, d] = baseDateStr.split('-').map(Number);
 
       for (let i = 0; i < repeatCount; i++) {
-        const targetDate = new Date(baseDate);
-        targetDate.setDate(baseDate.getDate() + (i * 7));
-
+        const targetDate = new Date(y, m - 1, d + (i * 7));
         state.lessons.push({
-          id: Date.now().toString() + i,
+          id: `${Date.now()}_${i}`,
           studentId,
           date: formatDateISO(targetDate),
           time,
