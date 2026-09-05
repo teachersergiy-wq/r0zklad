@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   state.key = urlParams.get('key') || 'default_schedule';
 
   await loadSchedule();
+  sanitizeState();
   render();
 });
 
@@ -80,6 +81,24 @@ function initTimeOptions() {
   }
 }
 
+function sanitizeState() {
+  if (!Array.isArray(state.students)) state.students = [];
+  if (!Array.isArray(state.lessons)) state.lessons = [];
+
+  state.students.forEach((s, idx) => {
+    s.id = s.id ? String(s.id) : String(Date.now() + idx);
+    s.name = s.name || `Учень ${idx + 1}`;
+    s.color = s.color || '#3b82f6';
+  });
+
+  state.lessons.forEach((l, idx) => {
+    l.id = l.id ? String(l.id) : String(Date.now() + '_' + idx);
+    l.studentId = String(l.studentId || '');
+    l.paid = l.paid === true || l.paid === 'true';
+    l.status = l.status || 'planned';
+  });
+}
+
 async function loadSchedule() {
   let loaded = false;
 
@@ -92,7 +111,7 @@ async function loadSchedule() {
         loaded = true;
       }
     } catch (e) {
-      console.warn('Supabase offline or RPC failed, loading from localStorage.');
+      console.warn('Supabase loading fallback to LocalStorage');
     }
   }
 
@@ -109,6 +128,7 @@ async function loadSchedule() {
 }
 
 async function saveSchedule() {
+  sanitizeState();
   const payload = { students: state.students, lessons: state.lessons };
   localStorage.setItem('schedule_' + state.key, JSON.stringify(payload));
 
@@ -119,7 +139,7 @@ async function saveSchedule() {
         p_data: payload
       });
     } catch (e) {
-      console.warn('Supabase save failed, stored in LocalStorage.');
+      console.warn('Saved to LocalStorage.');
     }
   }
 }
@@ -155,7 +175,10 @@ function updateDateDisplay() {
 function renderStudentsList() {
   elements.studentsList.innerHTML = '';
   if (state.students.length === 0) {
-    elements.studentsList.innerHTML = '<div style="color:#64748b; font-size:0.88rem; text-align:center; padding:12px;">Список учнів порожній. Додайте першого учня вище.</div>';
+    const emptyMsg = document.createElement('div');
+    emptyMsg.style.cssText = 'color:#64748b; font-size:0.88rem; text-align:center; padding:12px;';
+    emptyMsg.textContent = 'Список учнів порожній. Додайте першого учня вище.';
+    elements.studentsList.appendChild(emptyMsg);
     return;
   }
 
@@ -166,19 +189,41 @@ function renderStudentsList() {
     const colorInput = document.createElement('input');
     colorInput.type = 'color';
     colorInput.value = student.color || '#3b82f6';
-    colorInput.style.cssText = 'width:32px; height:32px; border:none; padding:0; cursor:pointer; border-radius:4px;';
-    colorInput.onchange = (e) => updateStudent(student.id, 'color', e.target.value);
+    colorInput.style.cssText = 'width:34px; height:34px; border:none; padding:0; cursor:pointer; border-radius:4px; background:none;';
+    colorInput.onchange = async (e) => {
+      student.color = e.target.value;
+      await saveSchedule();
+      render();
+    };
 
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.value = student.name || '';
-    nameInput.style.cssText = 'flex:1; padding:6px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:600; font-size:0.9rem;';
-    nameInput.onchange = (e) => updateStudent(student.id, 'name', e.target.value);
+    nameInput.style.cssText = 'flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-weight:600; font-size:0.9rem;';
+    nameInput.onchange = async (e) => {
+      const val = e.target.value.trim();
+      if (val) {
+        student.name = val;
+        await saveSchedule();
+        render();
+      }
+    };
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'danger';
+    deleteBtn.type = 'button';
     deleteBtn.textContent = 'Видалити';
-    deleteBtn.onclick = () => deleteStudent(student.id);
+    deleteBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (confirm(`Видалити учня "${student.name}" та всі його уроки?`)) {
+        const studentIdStr = String(student.id);
+        state.students = state.students.filter(s => String(s.id) !== studentIdStr);
+        state.lessons = state.lessons.filter(l => String(l.studentId) !== studentIdStr);
+        await saveSchedule();
+        render();
+      }
+    };
 
     item.appendChild(colorInput);
     item.appendChild(nameInput);
@@ -192,27 +237,10 @@ function updateStudentSelectOptions() {
   elements.lessonStudentSelect.innerHTML = '';
   state.students.forEach(s => {
     const opt = document.createElement('option');
-    opt.value = s.id;
+    opt.value = String(s.id);
     opt.textContent = s.name;
     elements.lessonStudentSelect.appendChild(opt);
   });
-}
-
-async function updateStudent(id, field, value) {
-  const student = state.students.find(s => String(s.id) === String(id));
-  if (student) {
-    student[field] = value;
-    await saveSchedule();
-    render();
-  }
-}
-
-async function deleteStudent(id) {
-  if (!confirm('Видалити учня та всі його уроки?')) return;
-  state.students = state.students.filter(s => String(s.id) !== String(id));
-  state.lessons = state.lessons.filter(l => String(l.studentId) !== String(id));
-  await saveSchedule();
-  render();
 }
 
 function getStartOfWeek(d) {
@@ -238,6 +266,7 @@ function isToday(date) {
 
 function renderGrid() {
   elements.calendarGrid.innerHTML = '';
+  elements.calendarGrid.style.gridTemplateColumns = '';
 
   if (state.view === 'month') {
     renderMonthView();
@@ -282,38 +311,17 @@ function renderGrid() {
       const slot = document.createElement('div');
       slot.className = 'time-slot';
 
-      const lesson = state.lessons.find(l => {
+      const slotLessons = state.lessons.filter(l => {
         if (l.date !== dateISO) return false;
         const lHour = parseInt((l.time || '00:00').split(':')[0], 10);
         return lHour === h;
       });
 
-      if (lesson) {
-        const student = state.students.find(s => String(s.id) === String(lesson.studentId));
-        const card = document.createElement('div');
-        card.className = 'lesson-card';
-        card.style.backgroundColor = student ? student.color : '#3b82f6';
-        card.draggable = true;
-
-        const isPaid = lesson.paid === true || lesson.paid === 'true';
-        const isCompleted = lesson.status === 'completed';
-
-        card.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:4px;">
-            <span style="font-weight:bold; font-size:0.83rem; line-height:1.2;">
-              ${lesson.time} ${student ? student.name : 'Учень'}
-            </span>
-            <span title="Видалити" style="cursor:pointer; font-size:1.1rem; line-height:0.8; opacity:0.8;" onclick="event.stopPropagation(); deleteLesson('${lesson.id}')">&times;</span>
-          </div>
-          <div class="lesson-badges">
-            <span class="badge" style="background:${isPaid ? '#16a34a' : '#dc2626'}">${isPaid ? 'Оплачено' : 'Не опл.'}</span>
-            <span class="badge" style="background:${isCompleted ? '#475569' : '#2563eb'}">${isCompleted ? 'Відбувся' : 'Заплан.'}</span>
-          </div>
-        `;
-
-        card.onclick = () => openEditLessonModal(lesson.id);
-        card.ondragstart = (e) => e.dataTransfer.setData('text/plain', lesson.id);
-        slot.appendChild(card);
+      if (slotLessons.length > 0) {
+        slotLessons.forEach(lesson => {
+          const card = createLessonCard(lesson);
+          slot.appendChild(card);
+        });
       } else {
         const freeSlot = document.createElement('div');
         freeSlot.className = 'slot-free';
@@ -336,6 +344,66 @@ function renderGrid() {
   }
 }
 
+function createLessonCard(lesson) {
+  const student = state.students.find(s => String(s.id) === String(lesson.studentId));
+  const card = document.createElement('div');
+  card.className = 'lesson-card';
+  card.style.backgroundColor = student ? (student.color || '#3b82f6') : '#64748b';
+  card.draggable = true;
+
+  const isPaid = lesson.paid === true || lesson.paid === 'true';
+  const isCompleted = lesson.status === 'completed';
+
+  const topRow = document.createElement('div');
+  topRow.style.cssText = 'display:flex; justify-content:space-between; align-items:flex-start; gap:4px;';
+
+  const titleSpan = document.createElement('span');
+  titleSpan.style.cssText = 'font-weight:bold; font-size:0.83rem; line-height:1.2; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+  titleSpan.textContent = `${lesson.time || ''} ${student ? student.name : 'Учень'}`;
+
+  const deleteBtn = document.createElement('span');
+  deleteBtn.title = 'Видалити урок';
+  deleteBtn.style.cssText = 'cursor:pointer; font-size:1.2rem; line-height:0.7; opacity:0.8; font-weight:bold; padding:2px;';
+  deleteBtn.innerHTML = '&times;';
+  deleteBtn.onclick = async (e) => {
+    e.stopPropagation();
+    if (confirm('Видалити цей урок?')) {
+      state.lessons = state.lessons.filter(l => String(l.id) !== String(lesson.id));
+      await saveSchedule();
+      render();
+    }
+  };
+
+  topRow.appendChild(titleSpan);
+  topRow.appendChild(deleteBtn);
+
+  const badgesRow = document.createElement('div');
+  badgesRow.className = 'lesson-badges';
+
+  const paidBadge = document.createElement('span');
+  paidBadge.className = 'badge';
+  paidBadge.style.backgroundColor = isPaid ? '#16a34a' : '#dc2626';
+  paidBadge.textContent = isPaid ? 'Оплачено' : 'Не опл.';
+
+  const statusBadge = document.createElement('span');
+  statusBadge.className = 'badge';
+  statusBadge.style.backgroundColor = isCompleted ? '#475569' : '#2563eb';
+  statusBadge.textContent = isCompleted ? 'Відбувся' : 'Заплан.';
+
+  badgesRow.appendChild(paidBadge);
+  badgesRow.appendChild(statusBadge);
+
+  card.appendChild(topRow);
+  card.appendChild(badgesRow);
+
+  card.onclick = () => openEditLessonModal(lesson.id);
+  card.ondragstart = (e) => {
+    e.dataTransfer.setData('text/plain', String(lesson.id));
+  };
+
+  return card;
+}
+
 function renderMonthView() {
   elements.calendarGrid.className = 'calendar-grid';
   elements.calendarGrid.style.gridTemplateColumns = 'repeat(7, 1fr)';
@@ -346,6 +414,7 @@ function renderMonthView() {
   const firstDay = new Date(year, month, 1);
   const startDayOfWeek = (firstDay.getDay() + 6) % 7;
   const totalDays = new Date(year, month + 1, 0).getDate();
+  const prevMonthLastDay = new Date(year, month, 0).getDate();
 
   const daysNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
   daysNames.forEach(name => {
@@ -355,50 +424,54 @@ function renderMonthView() {
     elements.calendarGrid.appendChild(h);
   });
 
-  const prevMonthLastDay = new Date(year, month, 0).getDate();
   for (let i = startDayOfWeek - 1; i >= 0; i--) {
     const cell = document.createElement('div');
-    cell.className = 'month-cell';
-    cell.style.cssText = 'opacity: 0.4; background: #f1f5f9; border-color: #e2e8f0;';
-    cell.innerHTML = `<div style="font-weight:bold; color:#94a3b8; text-align:right;">${prevMonthLastDay - i}</div>`;
+    cell.className = 'month-cell padding-cell';
+    cell.innerHTML = `<div class="month-day-num muted">${prevMonthLastDay - i}</div>`;
     elements.calendarGrid.appendChild(cell);
   }
 
   for (let day = 1; day <= totalDays; day++) {
     const d = new Date(year, month, day);
     const dateISO = formatDateISO(d);
+    const isCurrentToday = isToday(d);
 
     const cell = document.createElement('div');
-    cell.className = `month-cell ${isToday(d) ? 'today' : ''}`;
-    cell.innerHTML = `<div style="font-weight:bold; ${isToday(d) ? 'color:#1d4ed8;' : 'color:#475569;'} text-align:right;">${day}</div>`;
+    cell.className = `month-cell ${isCurrentToday ? 'today' : ''}`;
+
+    const numDiv = document.createElement('div');
+    numDiv.className = `month-day-num ${isCurrentToday ? 'today-num' : ''}`;
+    numDiv.textContent = day;
+    cell.appendChild(numDiv);
 
     const dayLessons = state.lessons.filter(l => l.date === dateISO);
+    dayLessons.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
     dayLessons.forEach(l => {
       const s = state.students.find(st => String(st.id) === String(l.studentId));
-      const tag = document.createElement('div');
+      const badge = document.createElement('div');
+      badge.className = 'month-lesson-badge';
+      badge.style.backgroundColor = s ? (s.color || '#3b82f6') : '#3b82f6';
+
       const isPaid = l.paid === true || l.paid === 'true';
 
-      tag.style.cssText = `
-        background: ${s ? s.color : '#3b82f6'};
-        color: white;
-        padding: 3px 6px;
-        border-radius: 4px;
-        font-size: 0.72rem;
-        cursor: pointer;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-      `;
-      tag.innerHTML = `
-        <span><strong>${l.time}</strong> ${s ? s.name : ''}</span>
-        <span style="font-size:0.65rem; background:rgba(0,0,0,0.25); padding:1px 4px; border-radius:2px;">${isPaid ? '✓' : '✗'}</span>
-      `;
-      tag.onclick = (e) => {
+      const textSpan = document.createElement('span');
+      textSpan.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+      textSpan.innerHTML = `<strong>${l.time || ''}</strong> ${s ? s.name : ''}`;
+
+      const iconSpan = document.createElement('span');
+      iconSpan.style.cssText = 'font-size:0.65rem; background:rgba(0,0,0,0.25); padding:1px 4px; border-radius:2px; flex-shrink:0;';
+      iconSpan.textContent = isPaid ? '✓' : '✗';
+
+      badge.appendChild(textSpan);
+      badge.appendChild(iconSpan);
+
+      badge.onclick = (e) => {
         e.stopPropagation();
         openEditLessonModal(l.id);
       };
-      cell.appendChild(tag);
+
+      cell.appendChild(badge);
     });
 
     elements.calendarGrid.appendChild(cell);
@@ -408,9 +481,8 @@ function renderMonthView() {
   const remaining = (7 - (totalCells % 7)) % 7;
   for (let i = 1; i <= remaining; i++) {
     const cell = document.createElement('div');
-    cell.className = 'month-cell';
-    cell.style.cssText = 'opacity: 0.4; background: #f1f5f9; border-color: #e2e8f0;';
-    cell.innerHTML = `<div style="font-weight:bold; color:#94a3b8; text-align:right;">${i}</div>`;
+    cell.className = 'month-cell padding-cell';
+    cell.innerHTML = `<div class="month-day-num muted">${i}</div>`;
     elements.calendarGrid.appendChild(cell);
   }
 }
@@ -425,21 +497,15 @@ async function moveLesson(lessonId, newDate, newTime) {
   }
 }
 
-window.deleteLesson = async (lessonId) => {
-  state.lessons = state.lessons.filter(l => String(l.id) !== String(lessonId));
-  await saveSchedule();
-  render();
-};
-
 function openEditLessonModal(lessonId) {
   const lesson = state.lessons.find(l => String(l.id) === String(lessonId));
   if (!lesson) return;
 
-  state.editingLessonId = lessonId;
+  state.editingLessonId = String(lessonId);
   elements.lessonModalTitle.textContent = 'Редагувати урок';
 
   updateStudentSelectOptions();
-  elements.lessonStudentSelect.value = lesson.studentId;
+  elements.lessonStudentSelect.value = String(lesson.studentId);
   elements.lessonDateInput.value = lesson.date;
 
   const parts = (lesson.time || '18:00').split(':');
@@ -497,7 +563,7 @@ function setupEventListeners() {
   elements.closeLessonModalBtn.onclick = () => elements.lessonModal.classList.add('hidden');
 
   elements.saveLessonBtn.onclick = async () => {
-    const studentId = elements.lessonStudentSelect.value;
+    const studentId = String(elements.lessonStudentSelect.value);
     const baseDateStr = elements.lessonDateInput.value;
     const hour = elements.lessonHourSelect.value;
     const minute = elements.lessonMinuteSelect.value;
@@ -547,16 +613,30 @@ function setupEventListeners() {
   elements.viewMonthBtn.onclick = () => { state.view = 'month'; render(); };
 
   elements.todayBtn.onclick = () => { state.currentDate = new Date(); render(); };
+  
   elements.prevBtn.onclick = () => {
-    if (state.view === 'day') state.currentDate.setDate(state.currentDate.getDate() - 1);
-    else if (state.view === 'week') state.currentDate.setDate(state.currentDate.getDate() - 7);
-    else if (state.view === 'month') state.currentDate.setMonth(state.currentDate.getMonth() - 1);
+    if (state.view === 'day') {
+      state.currentDate.setDate(state.currentDate.getDate() - 1);
+    } else if (state.view === 'week') {
+      state.currentDate.setDate(state.currentDate.getDate() - 7);
+    } else if (state.view === 'month') {
+      const y = state.currentDate.getFullYear();
+      const m = state.currentDate.getMonth();
+      state.currentDate = new Date(y, m - 1, 1);
+    }
     render();
   };
+
   elements.nextBtn.onclick = () => {
-    if (state.view === 'day') state.currentDate.setDate(state.currentDate.getDate() + 1);
-    else if (state.view === 'week') state.currentDate.setDate(state.currentDate.getDate() + 7);
-    else if (state.view === 'month') state.currentDate.setMonth(state.currentDate.getMonth() + 1);
+    if (state.view === 'day') {
+      state.currentDate.setDate(state.currentDate.getDate() + 1);
+    } else if (state.view === 'week') {
+      state.currentDate.setDate(state.currentDate.getDate() + 7);
+    } else if (state.view === 'month') {
+      const y = state.currentDate.getFullYear();
+      const m = state.currentDate.getMonth();
+      state.currentDate = new Date(y, m + 1, 1);
+    }
     render();
   };
 }
