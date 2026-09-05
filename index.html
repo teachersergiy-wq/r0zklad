@@ -8,27 +8,39 @@
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
     body { background: #f8fafc; margin: 0; padding: 20px; color: #1e293b; }
+    
     .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 10px; flex-wrap: wrap; }
     .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    
     button { cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; font-weight: 500; }
     button:hover { background: #f1f5f9; }
     button.primary { background: #2563eb; color: white; border: none; }
     button.primary:hover { background: #1d4ed8; }
     button.danger { background: #ef4444; color: white; border: none; padding: 4px 8px; font-size: 0.8rem; }
-    
+    button.active { background: #e2e8f0; font-weight: bold; border-color: #94a3b8; }
+
+    .edit-mode-toggle { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer; background: #f1f5f9; padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; }
+
     .calendar-grid { display: grid; gap: 8px; margin-top: 10px; }
     .grid-week { grid-template-columns: 60px repeat(7, 1fr); }
     .grid-day { grid-template-columns: 60px 1fr; }
     
-    .time-slot { border-top: 1px dashed #e2e8f0; height: 48px; display: flex; align-items: center; justify-content: center; position: relative; }
+    .time-slot { border-top: 1px dashed #e2e8f0; min-height: 52px; display: flex; align-items: center; justify-content: center; position: relative; }
     .time-label { font-size: 0.75rem; color: #64748b; text-align: right; padding-right: 8px; border: none; }
+    
     .day-header { font-weight: bold; text-align: center; padding: 8px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; }
+    .day-header.today { background: #dbeafe; border-color: #3b82f6; color: #1e40af; }
     
     .slot-free { border: 1px dashed #cbd5e1; border-radius: 4px; color: #94a3b8; font-size: 0.75rem; height: 100%; width: 100%; display: flex; align-items: center; justify-content: center; background: #fafafa; }
     .slot-free.drag-over { background: #e0e7ff; border-color: #6366f1; }
     
-    .lesson-card { width: 100%; height: 100%; border-radius: 4px; padding: 4px 6px; color: white; font-size: 0.8rem; display: flex; justify-content: space-between; align-items: center; cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    .lesson-card { width: 100%; height: 100%; border-radius: 4px; padding: 4px 6px; color: white; font-size: 0.8rem; display: flex; flex-direction: column; justify-content: space-between; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.12); position: relative; }
     .lesson-card:active { cursor: grabbing; }
+    .lesson-badges { display: flex; gap: 4px; margin-top: 2px; font-size: 0.7rem; }
+    .badge { padding: 1px 4px; border-radius: 3px; background: rgba(0,0,0,0.25); }
+
+    .month-cell { border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; min-height: 90px; background: #fff; font-size: 0.8rem; }
+    .month-cell.today { background: #eff6ff; border-color: #3b82f6; }
 
     .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; justify-content: center; align-items: center; z-index: 1000; }
     .modal.hidden { display: none; }
@@ -57,6 +69,10 @@
         <button id="view-month-btn">Місяць</button>
       </div>
 
+      <label class="edit-mode-toggle">
+        <input type="checkbox" id="edit-mode-checkbox"> Редагування (09:00 - 17:00)
+      </label>
+
       <button id="manage-students-btn">Учні</button>
       <button id="add-lesson-btn" class="primary">+ Урок</button>
     </div>
@@ -67,7 +83,7 @@
   <!-- Модальне вікно учнів -->
   <div id="students-modal" class="modal hidden">
     <div class="modal-content">
-      <h2>Управління учнями</h2>
+      <h2 style="margin-top:0;">Управління учнями</h2>
       <div class="form-group flex-row">
         <input type="text" id="new-student-name" placeholder="Ім'я учня" style="flex:1;">
         <input type="color" id="new-student-color" value="#3b82f6" style="width: 40px; height: 36px; padding:0;">
@@ -80,10 +96,10 @@
     </div>
   </div>
 
-  <!-- Модальне вікно додавання уроку -->
+  <!-- Модальне вікно додавання/редагування уроку -->
   <div id="lesson-modal" class="modal hidden">
     <div class="modal-content">
-      <h2>Додати урок</h2>
+      <h2 style="margin-top:0;" id="lesson-modal-title">Додати урок</h2>
       
       <div class="form-group">
         <label>Оберіть учня</label>
@@ -106,7 +122,24 @@
         </div>
       </div>
 
-      <div class="form-group">
+      <div class="form-group flex-row">
+        <div style="flex:1;">
+          <label>Статус оплати</label>
+          <select id="lesson-paid-select">
+            <option value="false">Ні (Не оплачено)</option>
+            <option value="true">Так (Оплачено)</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label>Статус проведення</label>
+          <select id="lesson-status-select">
+            <option value="planned">Запланований</option>
+            <option value="completed">Відбувся</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group" id="repeat-group">
         <label>Повторення (щотижня)</label>
         <select id="lesson-repeat-select">
           <option value="1">Лише один раз</option>
@@ -119,7 +152,7 @@
 
       <div class="flex-row" style="justify-content: flex-end; margin-top: 20px;">
         <button id="close-lesson-modal-btn" type="button">Скасувати</button>
-        <button id="save-lesson-btn" type="button" class="primary">Зберегти урок</button>
+        <button id="save-lesson-btn" type="button" class="primary">Зберегти</button>
       </div>
     </div>
   </div>
