@@ -10,7 +10,7 @@ let state = {
   students: [],
   lessons: {},
   currentDate: new Date(),
-  view: 'week' // 'day', 'week', 'month'
+  view: 'week'
 };
 
 // ЕЛЕМЕНТИ DOM
@@ -109,7 +109,7 @@ function render() {
 
 function updateViewButtons() {
   [elements.viewDayBtn, elements.viewWeekBtn, elements.viewMonthBtn].forEach(btn => {
-    if (btn) btn.classList.remove('active', 'bg-blue-600', 'text-white');
+    if (btn) btn.classList.remove('active');
   });
 
   if (state.view === 'day' && elements.viewDayBtn) elements.viewDayBtn.classList.add('active');
@@ -161,8 +161,8 @@ function renderDayView() {
   elements.calendarGrid.style.display = 'grid';
   elements.calendarGrid.style.gridTemplateColumns = '1fr';
 
-  const dayOfWeek = (state.currentDate.getDay() + 6) % 7; // 0 - Пн, 6 - Нд
-  const daysNames = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П'ятниця', 'Субота', 'Неділя'];
+  const dayOfWeek = (state.currentDate.getDay() + 6) % 7;
+  const daysNames = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П’ятниця', 'Субота', 'Неділя'];
 
   const col = createDayColumn(daysNames[dayOfWeek], dayOfWeek, state.currentDate);
   elements.calendarGrid.appendChild(col);
@@ -196,7 +196,6 @@ function renderMonthView() {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
 
-  // Заголовки днів
   const daysNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
   daysNames.forEach(name => {
     const header = document.createElement('div');
@@ -205,7 +204,6 @@ function renderMonthView() {
     elements.calendarGrid.appendChild(header);
   });
 
-  // Порожні клітинки до початку місяця
   let startDay = (firstDay.getDay() + 6) % 7;
   for (let i = 0; i < startDay; i++) {
     const emptyCell = document.createElement('div');
@@ -213,7 +211,6 @@ function renderMonthView() {
     elements.calendarGrid.appendChild(emptyCell);
   }
 
-  // Дні місяця
   for (let day = 1; day <= lastDay.getDate(); day++) {
     const currentDate = new Date(year, month, day);
     const dayOfWeek = (currentDate.getDay() + 6) % 7;
@@ -298,7 +295,6 @@ function setupEventListeners() {
     render();
   };
 
-  // Перемикачі режимів перегляду
   if (elements.viewDayBtn) {
     elements.viewDayBtn.onclick = () => {
       state.view = 'day';
