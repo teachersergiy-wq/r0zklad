@@ -6,9 +6,11 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 let state = {
   key: null,
   students: [],
-  lessons: [], // Масив занять: { id, studentId, date: 'YYYY-MM-DD', time: 'HH:MM' }
+  lessons: [], // Масив уроків: { id, studentId, date: 'YYYY-MM-DD', time: 'HH:MM', paid: false, completed: 'planned' }
   currentDate: new Date(),
-  view: 'week'
+  view: 'week',
+  isEditMode: false,
+  editingLessonId: null
 };
 
 const elements = {
@@ -20,6 +22,7 @@ const elements = {
   viewDayBtn: document.getElementById('view-day-btn'),
   viewWeekBtn: document.getElementById('view-week-btn'),
   viewMonthBtn: document.getElementById('view-month-btn'),
+  editModeCheckbox: document.getElementById('edit-mode-checkbox'),
   
   // Учні
   manageStudentsBtn: document.getElementById('manage-students-btn'),
@@ -33,13 +36,17 @@ const elements = {
   // Уроки
   addLessonBtn: document.getElementById('add-lesson-btn'),
   lessonModal: document.getElementById('lesson-modal'),
+  lessonModalTitle: document.getElementById('lesson-modal-title'),
   closeLessonModalBtn: document.getElementById('close-lesson-modal-btn'),
   saveLessonBtn: document.getElementById('save-lesson-btn'),
   lessonStudentSelect: document.getElementById('lesson-student-select'),
   lessonDateInput: document.getElementById('lesson-date-input'),
   lessonHourSelect: document.getElementById('lesson-hour-select'),
   lessonMinuteSelect: document.getElementById('lesson-minute-select'),
-  lessonRepeatSelect: document.getElementById('lesson-repeat-select')
+  lessonPaidSelect: document.getElementById('lesson-paid-select'),
+  lessonStatusSelect: document.getElementById('lesson-status-select'),
+  lessonRepeatSelect: document.getElementById('lesson-repeat-select'),
+  repeatGroup: document.getElementById('repeat-group')
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -59,7 +66,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function initTimeOptions() {
-  // Години від 09 до 21 (за замовчуванням 18)
   elements.lessonHourSelect.innerHTML = '';
   for (let h = 9; h <= 21; h++) {
     const hourStr = String(h).padStart(2, '0');
@@ -70,7 +76,6 @@ function initTimeOptions() {
     elements.lessonHourSelect.appendChild(opt);
   }
 
-  // Хвилини кратні 5 (за замовчуванням 00)
   elements.lessonMinuteSelect.innerHTML = '';
   for (let m = 0; m < 60; m += 5) {
     const minStr = String(m).padStart(2, '0');
@@ -113,26 +118,45 @@ async function saveSchedule() {
 
 function render() {
   updateDateDisplay();
+  updateViewButtons();
   renderStudentsList();
   updateStudentSelectOptions();
   renderGrid();
 }
 
+function updateViewButtons() {
+  [elements.viewDayBtn, elements.viewWeekBtn, elements.viewMonthBtn].forEach(btn => btn.classList.remove('active'));
+  if (state.view === 'day') elements.viewDayBtn.classList.add('active');
+  if (state.view === 'week') elements.viewWeekBtn.classList.add('active');
+  if (state.view === 'month') elements.viewMonthBtn.classList.add('active');
+}
+
 function updateDateDisplay() {
-  const options = { month: 'long', year: 'numeric' };
-  if (state.view === 'day') options.day = 'numeric';
-  elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', options);
+  if (state.view === 'day') {
+    elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+  } else if (state.view === 'week') {
+    const start = getStartOfWeek(state.currentDate);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    elements.currentDateDisplay.textContent = `${start.getDate()} ${start.toLocaleDateString('uk-UA', {month:'short'})} - ${end.getDate()} ${end.toLocaleDateString('uk-UA', {month:'short', year:'numeric'})}`;
+  } else if (state.view === 'month') {
+    elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
+  }
 }
 
 function renderStudentsList() {
   elements.studentsList.innerHTML = '';
+  if (state.students.length === 0) {
+    elements.studentsList.innerHTML = '<div style="color:#64748b; font-size:0.9rem;">Спискок порожній</div>';
+    return;
+  }
   state.students.forEach(student => {
     const item = document.createElement('div');
     item.className = 'student-item';
     item.innerHTML = `
       <div style="display:flex; align-items:center; gap:8px;">
         <input type="color" value="${student.color}" onchange="updateStudent('${student.id}', 'color', this.value)" style="width:24px; height:24px; border:none; padding:0; cursor:pointer;">
-        <input type="text" value="${student.name}" onchange="updateStudent('${student.id}', 'name', this.value)" style="border:none; background:transparent; font-weight:bold;">
+        <input type="text" value="${student.name}" onchange="updateStudent('${student.id}', 'name', this.value)" style="border:none; background:transparent; font-weight:bold; width: 180px;">
       </div>
       <button class="danger" onclick="deleteStudent('${student.id}')">Видалити</button>
     `;
@@ -174,7 +198,17 @@ function getStartOfWeek(d) {
 }
 
 function formatDateISO(date) {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isToday(date) {
+  const today = new Date();
+  return date.getDate() === today.getDate() &&
+         date.getMonth() === today.getMonth() &&
+         date.getFullYear() === today.getFullYear();
 }
 
 function renderGrid() {
@@ -192,11 +226,8 @@ function renderGrid() {
   const startOfWeek = getStartOfWeek(state.currentDate);
   const daysDates = [];
 
-  // Колонка часу
-  const emptyHeader = document.createElement('div');
-  elements.calendarGrid.appendChild(emptyHeader);
+  elements.calendarGrid.appendChild(document.createElement('div'));
 
-  // Заголовки днів
   const daysNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
   for (let i = 0; i < daysCount; i++) {
     const date = isWeek ? new Date(startOfWeek) : new Date(state.currentDate);
@@ -205,22 +236,22 @@ function renderGrid() {
 
     const dayIdx = (date.getDay() + 6) % 7;
     const header = document.createElement('div');
-    header.className = 'day-header';
+    header.className = `day-header ${isToday(date) ? 'today' : ''}`;
     header.textContent = `${daysNames[dayIdx]} (${date.getDate()})`;
     elements.calendarGrid.appendChild(header);
   }
 
-  // Слоти за годинами від 09:00 до 21:00
-  for (let h = 9; h <= 21; h++) {
+  const startHour = state.isEditMode ? 9 : 17;
+  const endHour = 21;
+
+  for (let h = startHour; h <= endHour; h++) {
     const timeStr = `${String(h).padStart(2, '0')}:00`;
     
-    // Часова позначка
     const timeLabel = document.createElement('div');
     timeLabel.className = 'time-slot time-label';
     timeLabel.textContent = timeStr;
     elements.calendarGrid.appendChild(timeLabel);
 
-    // Колонки для кожного дня
     daysDates.forEach(date => {
       const dateISO = formatDateISO(date);
       const slot = document.createElement('div');
@@ -234,8 +265,22 @@ function renderGrid() {
         card.className = 'lesson-card';
         card.style.backgroundColor = student ? student.color : '#3b82f6';
         card.draggable = true;
-        card.innerHTML = `<span>${lesson.time} ${student ? student.name : ''}</span><span style="cursor:pointer;" onclick="deleteLesson('${lesson.id}')">&times;</span>`;
+
+        const isPaid = lesson.paid === true || lesson.paid === 'true';
+        const isCompleted = lesson.status === 'completed';
+
+        card.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong>${lesson.time} ${student ? student.name : ''}</strong>
+            <span style="cursor:pointer; font-size:1.1rem; line-height:1;" onclick="event.stopPropagation(); deleteLesson('${lesson.id}')">&times;</span>
+          </div>
+          <div class="lesson-badges">
+            <span class="badge" style="background:${isPaid ? '#22c55e' : '#ef4444'}">${isPaid ? 'Оплачено' : 'Ні'}</span>
+            <span class="badge">${isCompleted ? 'Відбувся' : 'План'}</span>
+          </div>
+        `;
         
+        card.onclick = () => openEditLessonModal(lesson.id);
         card.ondragstart = (e) => e.dataTransfer.setData('text/plain', lesson.id);
         slot.appendChild(card);
       } else {
@@ -260,22 +305,6 @@ function renderGrid() {
   }
 }
 
-async function moveLesson(lessonId, newDate, newTime) {
-  const lesson = state.lessons.find(l => l.id === lessonId);
-  if (lesson) {
-    lesson.date = newDate;
-    lesson.time = newTime;
-    await saveSchedule();
-    render();
-  }
-}
-
-window.deleteLesson = async (lessonId) => {
-  state.lessons = state.lessons.filter(l => l.id !== lessonId);
-  await saveSchedule();
-  render();
-};
-
 function renderMonthView() {
   elements.calendarGrid.className = 'calendar-grid';
   elements.calendarGrid.style.gridTemplateColumns = 'repeat(7, 1fr)';
@@ -296,7 +325,7 @@ function renderMonthView() {
   let startDay = (firstDay.getDay() + 6) % 7;
   for (let i = 0; i < startDay; i++) {
     const empty = document.createElement('div');
-    empty.style.cssText = 'background:#f1f5f9; min-height:80px; border-radius:6px; opacity:0.5;';
+    empty.style.cssText = 'background:#f1f5f9; min-height:90px; border-radius:6px; opacity:0.5;';
     elements.calendarGrid.appendChild(empty);
   }
 
@@ -305,15 +334,16 @@ function renderMonthView() {
     const dateISO = formatDateISO(d);
     
     const cell = document.createElement('div');
-    cell.style.cssText = 'border:1px solid #e2e8f0; border-radius:6px; padding:4px; min-height:80px; background:#fff; font-size:0.8rem;';
+    cell.className = `month-cell ${isToday(d) ? 'today' : ''}`;
     cell.innerHTML = `<div style="font-weight:bold; color:#64748b; text-align:right;">${day}</div>`;
 
     const dayLessons = state.lessons.filter(l => l.date === dateISO);
     dayLessons.forEach(l => {
       const s = state.students.find(st => st.id === l.studentId);
       const tag = document.createElement('div');
-      tag.style.cssText = `background:${s ? s.color : '#3b82f6'}; color:white; padding:2px 4px; border-radius:3px; margin-top:2px; font-size:0.75rem;`;
+      tag.style.cssText = `background:${s ? s.color : '#3b82f6'}; color:white; padding:2px 4px; border-radius:3px; margin-top:2px; font-size:0.75rem; cursor:pointer;`;
       tag.textContent = `${l.time} ${s ? s.name : ''}`;
+      tag.onclick = () => openEditLessonModal(l.id);
       cell.appendChild(tag);
     });
 
@@ -321,8 +351,48 @@ function renderMonthView() {
   }
 }
 
+async function moveLesson(lessonId, newDate, newTime) {
+  const lesson = state.lessons.find(l => l.id === lessonId);
+  if (lesson) {
+    lesson.date = newDate;
+    lesson.time = newTime;
+    await saveSchedule();
+    render();
+  }
+}
+
+window.deleteLesson = async (lessonId) => {
+  state.lessons = state.lessons.filter(l => l.id !== lessonId);
+  await saveSchedule();
+  render();
+};
+
+function openEditLessonModal(lessonId) {
+  const lesson = state.lessons.find(l => l.id === lessonId);
+  if (!lesson) return;
+
+  state.editingLessonId = lessonId;
+  elements.lessonModalTitle.textContent = 'Редагувати урок';
+  elements.lessonStudentSelect.value = lesson.studentId;
+  elements.lessonDateInput.value = lesson.date;
+
+  const [h, m] = lesson.time.split(':');
+  elements.lessonHourSelect.value = h;
+  elements.lessonMinuteSelect.value = m;
+  
+  elements.lessonPaidSelect.value = String(lesson.paid);
+  elements.lessonStatusSelect.value = lesson.status || 'planned';
+
+  elements.repeatGroup.style.display = 'none';
+  elements.lessonModal.classList.remove('hidden');
+}
+
 function setupEventListeners() {
-  // Вікно учнів
+  elements.editModeCheckbox.onchange = (e) => {
+    state.isEditMode = e.target.checked;
+    render();
+  };
+
   elements.manageStudentsBtn.onclick = () => elements.studentsModal.classList.remove('hidden');
   elements.closeStudentsModalBtn.onclick = () => elements.studentsModal.classList.add('hidden');
   
@@ -337,34 +407,55 @@ function setupEventListeners() {
     render();
   };
 
-  // Вікно додавання уроків
   elements.addLessonBtn.onclick = () => {
+    if (state.students.length === 0) {
+      alert('Спочатку додайте хоча б одного учня!');
+      return;
+    }
+    state.editingLessonId = null;
+    elements.lessonModalTitle.textContent = 'Додати урок';
     elements.lessonDateInput.value = formatDateISO(state.currentDate);
+    elements.repeatGroup.style.display = 'block';
     elements.lessonModal.classList.remove('hidden');
   };
+  
   elements.closeLessonModalBtn.onclick = () => elements.lessonModal.classList.add('hidden');
 
   elements.saveLessonBtn.onclick = async () => {
     const studentId = elements.lessonStudentSelect.value;
     const baseDateStr = elements.lessonDateInput.value;
     const time = `${elements.lessonHourSelect.value}:${elements.lessonMinuteSelect.value}`;
-    const repeatCount = parseInt(elements.lessonRepeatSelect.value, 10);
+    const paid = elements.lessonPaidSelect.value === 'true';
+    const status = elements.lessonStatusSelect.value;
 
     if (!studentId || !baseDateStr) return;
 
-    const baseDate = new Date(baseDateStr);
+    if (state.editingLessonId) {
+      const lesson = state.lessons.find(l => l.id === state.editingLessonId);
+      if (lesson) {
+        lesson.studentId = studentId;
+        lesson.date = baseDateStr;
+        lesson.time = time;
+        lesson.paid = paid;
+        lesson.status = status;
+      }
+    } else {
+      const repeatCount = parseInt(elements.lessonRepeatSelect.value, 10);
+      const baseDate = new Date(baseDateStr);
 
-    for (let i = 0; i < repeatCount; i++) {
-      const targetDate = new Date(baseDate);
-      targetDate.setDate(baseDate.getDate() + (i * 7));
-      const dateISO = formatDateISO(targetDate);
+      for (let i = 0; i < repeatCount; i++) {
+        const targetDate = new Date(baseDate);
+        targetDate.setDate(baseDate.getDate() + (i * 7));
 
-      state.lessons.push({
-        id: Date.now().toString() + i,
-        studentId,
-        date: dateISO,
-        time
-      });
+        state.lessons.push({
+          id: Date.now().toString() + i,
+          studentId,
+          date: formatDateISO(targetDate),
+          time,
+          paid,
+          status
+        });
+      }
     }
 
     await saveSchedule();
@@ -372,7 +463,6 @@ function setupEventListeners() {
     render();
   };
 
-  // Перемикання виглядів та дат
   elements.viewDayBtn.onclick = () => { state.view = 'day'; render(); };
   elements.viewWeekBtn.onclick = () => { state.view = 'week'; render(); };
   elements.viewMonthBtn.onclick = () => { state.view = 'month'; render(); };
