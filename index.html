@@ -8,178 +8,108 @@
 </head>
 <body>
 
-<div class="app">
-
-  <header class="topbar">
-    <div class="topbar-title">
-      <h1>Розклад занять</h1>
+  <!-- ВЕРХНЯ ПАНЕЛЬ: ЗАГОЛОВОК ТА КНОПКИ УПРАВЛІННЯ -->
+  <header class="app-header">
+    <div class="header-left">
+      <h1 class="app-title">Розклад занять</h1>
     </div>
-
-    <div class="topbar-actions">
-      <button id="todayBtn" class="secondary-btn">Сьогодні</button>
-
-      <div class="view-switcher">
-        <button data-view="day" class="view-btn">День</button>
-        <button data-view="week" class="view-btn active">Тиждень</button>
-        <button data-view="month" class="view-btn">Місяць</button>
+    
+    <div class="header-controls">
+      <div class="btn-group">
+        <button id="today-btn" class="btn btn-secondary">Сьогодні</button>
       </div>
 
-      <button id="editModeBtn" class="secondary-btn">
-        Редагувати
-      </button>
+      <div class="btn-group view-switcher">
+        <button id="view-day-btn" class="btn btn-tab">День</button>
+        <button id="view-week-btn" class="btn btn-tab active">Тиждень</button>
+        <button id="view-month-btn" class="btn btn-tab">Місяць</button>
+      </div>
+
+      <button id="edit-schedule-btn" class="btn btn-primary">Редагувати</button>
     </div>
   </header>
 
-  <main class="calendar-page">
+  <!-- ПАНЕЛЬ НАВІГАЦІЇ ПО ДАТАХ -->
+  <div class="date-navigation">
+    <button id="prev-date-btn" class="nav-btn" aria-label="Попередній період">&lt;</button>
+    <span id="current-date-display" class="date-display"></span>
+    <button id="next-date-btn" class="nav-btn" aria-label="Наступний період">&gt;</button>
+  </div>
 
-    <div class="calendar-toolbar">
-      <button id="prevBtn" class="nav-btn">‹</button>
-
-      <div id="calendarTitle" class="calendar-title"></div>
-
-      <button id="nextBtn" class="nav-btn">›</button>
-    </div>
-
-    <div id="calendar" class="calendar"></div>
-
+  <!-- ОСНОВНА СІТКА КАЛЕНДАРЯ -->
+  <main class="calendar-container">
+    <div id="calendar-grid" class="calendar-grid week-view"></div>
   </main>
 
-</div>
+  <!-- МОДАЛЬНЕ ВІКНО РЕДАГУВАННЯ УЧНІВ ТА ЗАНЯТЬ -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h2>Редагування розкладу</h2>
+        <button id="close-modal-btn" class="btn-close">&times;</button>
+      </div>
+      
+      <div class="modal-body">
+        <!-- Секція додавання учнів -->
+        <section class="editor-section">
+          <h3>Учні та кольори</h3>
+          <div class="add-student-form">
+            <input type="text" id="new-student-name" placeholder="Ім'я учня" class="input-field">
+            <input type="color" id="new-student-color" value="#3b82f6" class="color-picker">
+            <button id="add-student-btn" class="btn btn-secondary">Додати</button>
+          </div>
+          <ul id="students-list" class="students-list"></ul>
+        </section>
 
-<!-- Модальне вікно заняття -->
-<div id="lessonModal" class="modal hidden">
+        <!-- Секція занять -->
+        <section class="editor-section">
+          <h3>Додати / Змінити заняття</h3>
+          <div class="lesson-form">
+            <div class="form-group">
+              <label for="lesson-student-select">Учень:</label>
+              <select id="lesson-student-select" class="input-field"></select>
+            </div>
+            
+            <div class="form-group">
+              <label for="lesson-day-select">День тижня:</label>
+              <select id="lesson-day-select" class="input-field">
+                <option value="1">Понеділок</option>
+                <option value="2">Вівторок</option>
+                <option value="3">Середа</option>
+                <option value="4">Четвер</option>
+                <option value="5">П'ятниця</option>
+                <option value="6">Субота</option>
+                <option value="0">Неділя</option>
+              </select>
+            </div>
 
-  <div class="modal-overlay"></div>
+            <div class="form-group">
+              <label for="lesson-time-input">Час початку:</label>
+              <input type="time" id="lesson-time-input" class="input-field" value="10:00">
+            </div>
 
-  <div class="modal-content">
+            <div class="form-group">
+              <label for="lesson-duration-input">Тривалість (хв):</label>
+              <input type="number" id="lesson-duration-input" class="input-field" value="60" step="15" min="15">
+            </div>
 
-    <div class="modal-header">
-      <h2 id="modalTitle">Заняття</h2>
-      <button id="closeModalBtn" class="modal-close">×</button>
-    </div>
+            <button id="save-lesson-btn" class="btn btn-primary">Зберегти заняття</button>
+          </div>
+        </section>
+      </div>
 
-    <div class="form-group">
-      <label for="lessonDate">Дата</label>
-      <input id="lessonDate" type="text" readonly>
-    </div>
-
-    <div class="form-group">
-      <label for="lessonTime">Час</label>
-      <input
-        id="lessonTime"
-        type="time"
-        min="09:00"
-        max="21:00"
-        step="300"
-      >
-    </div>
-
-    <div class="form-group">
-      <label for="slotStatus">Статус</label>
-      <select id="slotStatus">
-        <option value="free">Вільно</option>
-        <option value="occupied">Зайнято</option>
-        <option value="unavailable">Недоступно</option>
-      </select>
-    </div>
-
-    <div id="studentGroup" class="form-group">
-      <label for="studentSelect">Учень</label>
-      <select id="studentSelect">
-        <option value="">Оберіть учня</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label class="checkbox-row">
-        <input id="paidCheckbox" type="checkbox">
-        <span>Оплачено</span>
-      </label>
-    </div>
-
-    <div class="form-group">
-      <label for="lessonState">Стан заняття</label>
-      <select id="lessonState">
-        <option value="planned">Заплановане</option>
-        <option value="completed">Проведене</option>
-      </select>
-    </div>
-
-    <div id="studentColorGroup" class="form-group">
-      <label>Колір учня</label>
-
-      <div class="color-options">
-
-        <button
-          type="button"
-          class="color-option color-green"
-          data-color="green"
-          title="Світло-зелений">
-        </button>
-
-        <button
-          type="button"
-          class="color-option color-blue"
-          data-color="blue"
-          title="Світло-блакитний">
-        </button>
-
-        <button
-          type="button"
-          class="color-option color-orange"
-          data-color="orange"
-          title="Помаранчевий">
-        </button>
-
-        <button
-          type="button"
-          class="color-option color-gray"
-          data-color="gray"
-          title="Світло-сірий">
-        </button>
-
-        <button
-          type="button"
-          class="color-option color-yellow"
-          data-color="yellow"
-          title="Жовтий">
-        </button>
-
-        <button
-          type="button"
-          class="color-option color-red"
-          data-color="red"
-          title="Червоний">
-        </button>
-
+      <div class="modal-footer">
+        <button id="save-modal-btn" class="btn btn-primary">Заберегти та закрити</button>
       </div>
     </div>
-
-    <div class="modal-actions">
-      <button id="deleteLessonBtn" class="danger-btn">
-        Очистити слот
-      </button>
-
-      <div class="modal-actions-right">
-        <button id="cancelModalBtn" class="secondary-btn">
-          Скасувати
-        </button>
-
-        <button id="saveLessonBtn" class="primary-btn">
-          Зберегти
-        </button>
-      </div>
-    </div>
-
   </div>
-</div>
 
-<script src="app.js"></script>
+  <!-- ПОДОРОЖІ ТА СКРИПТИ (ПРАВИЛЬНИЙ ПОРЯДОК ПІДКТЮЧЕННЯ) -->
+  <!-- 1. Спочатку обов'язково завантажується бібліотека Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<!-- Підключення бібліотеки Supabase ПЕРШИМ -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
-    <!-- Підключення вашого коду ДОДАТКА ДРУГИМ -->
-    <script src="app.js"></script>
-  </body>
+  <!-- 2. Лише один раз підключається ваш код додатка -->
+  <script src="app.js"></script>
+
+</body>
 </html>
