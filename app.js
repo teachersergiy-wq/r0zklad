@@ -10,7 +10,7 @@ let state = {
   students: [],
   lessons: {},
   currentDate: new Date(),
-  view: 'week'
+  view: 'week' // 'day', 'week', 'month'
 };
 
 // ЕЛЕМЕНТИ DOM
@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   render();
 });
 
-// РОБОТА З З БАЗОЮ ДАНИХ
+// БАЗА ДАНИХ
 async function createNewSchedule() {
   try {
     const { data, error } = await db.rpc('create_schedule');
@@ -101,49 +101,164 @@ async function saveSchedule() {
 // ВІДОБРАЖЕННЯ
 function render() {
   updateDateDisplay();
+  updateViewButtons();
   renderGrid();
   renderStudentsList();
   updateStudentSelectOptions();
 }
 
+function updateViewButtons() {
+  [elements.viewDayBtn, elements.viewWeekBtn, elements.viewMonthBtn].forEach(btn => {
+    if (btn) btn.classList.remove('active', 'bg-blue-600', 'text-white');
+  });
+
+  if (state.view === 'day' && elements.viewDayBtn) elements.viewDayBtn.classList.add('active');
+  if (state.view === 'week' && elements.viewWeekBtn) elements.viewWeekBtn.classList.add('active');
+  if (state.view === 'month' && elements.viewMonthBtn) elements.viewMonthBtn.classList.add('active');
+}
+
 function updateDateDisplay() {
   if (!elements.currentDateDisplay) return;
   
-  const options = { month: 'long', year: 'numeric' };
   if (state.view === 'day') {
-    options.day = 'numeric';
+    const options = { day: 'numeric', month: 'long', year: 'numeric' };
+    elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', options);
+  } else if (state.view === 'week') {
+    const startOfWeek = getStartOfWeek(state.currentDate);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    
+    const startStr = startOfWeek.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+    const endStr = endOfWeek.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short', year: 'numeric' });
+    elements.currentDateDisplay.textContent = `${startStr} - ${endStr}`;
+  } else if (state.view === 'month') {
+    const options = { month: 'long', year: 'numeric' };
+    elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', options);
   }
-  elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', options);
+}
+
+function getStartOfWeek(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(date.setDate(diff));
 }
 
 function renderGrid() {
   if (!elements.calendarGrid) return;
   elements.calendarGrid.innerHTML = '';
 
-  const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
-  
-  days.forEach((day, index) => {
-    const dayCol = document.createElement('div');
-    dayCol.className = 'day-column';
-    dayCol.style.cssText = 'border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; min-height: 300px; background: #fff;';
-    
-    const dayHeader = document.createElement('div');
-    dayHeader.style.cssText = 'font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 4px; margin-bottom: 8px; text-align: center;';
-    dayHeader.textContent = day;
-    dayCol.appendChild(dayHeader);
+  if (state.view === 'day') {
+    renderDayView();
+  } else if (state.view === 'week') {
+    renderWeekView();
+  } else if (state.view === 'month') {
+    renderMonthView();
+  }
+}
 
-    // Відображення занять для конкретного дня
-    const dayLessons = Object.values(state.lessons).filter(l => String(l.day) === String((index + 1) % 7));
+function renderDayView() {
+  elements.calendarGrid.style.display = 'grid';
+  elements.calendarGrid.style.gridTemplateColumns = '1fr';
+
+  const dayOfWeek = (state.currentDate.getDay() + 6) % 7; // 0 - Пн, 6 - Нд
+  const daysNames = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П'ятниця', 'Субота', 'Неділя'];
+
+  const col = createDayColumn(daysNames[dayOfWeek], dayOfWeek, state.currentDate);
+  elements.calendarGrid.appendChild(col);
+}
+
+function renderWeekView() {
+  elements.calendarGrid.style.display = 'grid';
+  elements.calendarGrid.style.gridTemplateColumns = 'repeat(7, 1fr)';
+  elements.calendarGrid.style.gap = '8px';
+
+  const daysNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
+  const startOfWeek = getStartOfWeek(state.currentDate);
+
+  daysNames.forEach((dayName, index) => {
+    const date = new Date(startOfWeek);
+    date.setDate(startOfWeek.getDate() + index);
+
+    const col = createDayColumn(`${dayName} (${date.getDate()})`, index, date);
+    elements.calendarGrid.appendChild(col);
+  });
+}
+
+function renderMonthView() {
+  elements.calendarGrid.style.display = 'grid';
+  elements.calendarGrid.style.gridTemplateColumns = 'repeat(7, 1fr)';
+  elements.calendarGrid.style.gap = '4px';
+
+  const year = state.currentDate.getFullYear();
+  const month = state.currentDate.getMonth();
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+
+  // Заголовки днів
+  const daysNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
+  daysNames.forEach(name => {
+    const header = document.createElement('div');
+    header.style.cssText = 'font-weight: bold; text-align: center; padding: 4px; background: #f8fafc; border-radius: 4px;';
+    header.textContent = name;
+    elements.calendarGrid.appendChild(header);
+  });
+
+  // Порожні клітинки до початку місяця
+  let startDay = (firstDay.getDay() + 6) % 7;
+  for (let i = 0; i < startDay; i++) {
+    const emptyCell = document.createElement('div');
+    emptyCell.style.cssText = 'background: #f1f5f9; min-height: 80px; border-radius: 4px; opacity: 0.5;';
+    elements.calendarGrid.appendChild(emptyCell);
+  }
+
+  // Дні місяця
+  for (let day = 1; day <= lastDay.getDate(); day++) {
+    const currentDate = new Date(year, month, day);
+    const dayOfWeek = (currentDate.getDay() + 6) % 7;
+
+    const cell = document.createElement('div');
+    cell.style.cssText = 'border: 1px solid #e2e8f0; border-radius: 4px; padding: 4px; min-height: 80px; background: #fff; font-size: 0.8rem;';
+    
+    const num = document.createElement('div');
+    num.style.cssText = 'font-weight: bold; margin-bottom: 4px; text-align: right; color: #64748b;';
+    num.textContent = day;
+    cell.appendChild(num);
+
+    const dayLessons = Object.values(state.lessons).filter(l => String(l.day) === String(dayOfWeek));
     dayLessons.forEach(lesson => {
       const student = state.students.find(s => s.id === lesson.studentId);
-      const lessonEl = document.createElement('div');
-      lessonEl.style.cssText = `background-color: ${student ? student.color : '#3b82f6'}; color: white; padding: 4px 8px; border-radius: 4px; margin-bottom: 4px; font-size: 0.85rem;`;
-      lessonEl.textContent = `${lesson.time} - ${student ? student.name : 'Учень'}`;
-      dayCol.appendChild(lessonEl);
+      const item = document.createElement('div');
+      item.style.cssText = `background-color: ${student ? student.color : '#3b82f6'}; color: white; padding: 2px 4px; border-radius: 2px; margin-bottom: 2px; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
+      item.textContent = `${lesson.time} ${student ? student.name : ''}`;
+      cell.appendChild(item);
     });
 
-    elements.calendarGrid.appendChild(dayCol);
+    elements.calendarGrid.appendChild(cell);
+  }
+}
+
+function createDayColumn(title, dayIndex, date) {
+  const dayCol = document.createElement('div');
+  dayCol.className = 'day-column';
+  dayCol.style.cssText = 'border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; min-height: 350px; background: #fff;';
+  
+  const dayHeader = document.createElement('div');
+  dayHeader.style.cssText = 'font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 4px; margin-bottom: 8px; text-align: center;';
+  dayHeader.textContent = title;
+  dayCol.appendChild(dayHeader);
+
+  const dayLessons = Object.values(state.lessons).filter(l => String(l.day) === String(dayIndex));
+  dayLessons.forEach(lesson => {
+    const student = state.students.find(s => s.id === lesson.studentId);
+    const lessonEl = document.createElement('div');
+    lessonEl.style.cssText = `background-color: ${student ? student.color : '#3b82f6'}; color: white; padding: 6px 8px; border-radius: 4px; margin-bottom: 6px; font-size: 0.85rem;`;
+    lessonEl.textContent = `${lesson.time} - ${student ? student.name : 'Учень'}`;
+    dayCol.appendChild(lessonEl);
   });
+
+  return dayCol;
 }
 
 function renderStudentsList() {
@@ -183,6 +298,26 @@ function setupEventListeners() {
     render();
   };
 
+  // Перемикачі режимів перегляду
+  if (elements.viewDayBtn) {
+    elements.viewDayBtn.onclick = () => {
+      state.view = 'day';
+      render();
+    };
+  }
+  if (elements.viewWeekBtn) {
+    elements.viewWeekBtn.onclick = () => {
+      state.view = 'week';
+      render();
+    };
+  }
+  if (elements.viewMonthBtn) {
+    elements.viewMonthBtn.onclick = () => {
+      state.view = 'month';
+      render();
+    };
+  }
+
   if (elements.addStudentBtn) {
     elements.addStudentBtn.onclick = () => {
       const name = elements.newStudentName.value.trim();
@@ -220,14 +355,18 @@ function setupEventListeners() {
 
   if (elements.prevBtn) {
     elements.prevBtn.onclick = () => {
-      state.currentDate.setDate(state.currentDate.getDate() - 7);
+      if (state.view === 'day') state.currentDate.setDate(state.currentDate.getDate() - 1);
+      else if (state.view === 'week') state.currentDate.setDate(state.currentDate.getDate() - 7);
+      else if (state.view === 'month') state.currentDate.setMonth(state.currentDate.getMonth() - 1);
       render();
     };
   }
 
   if (elements.nextBtn) {
     elements.nextBtn.onclick = () => {
-      state.currentDate.setDate(state.currentDate.getDate() + 7);
+      if (state.view === 'day') state.currentDate.setDate(state.currentDate.getDate() + 1);
+      else if (state.view === 'week') state.currentDate.setDate(state.currentDate.getDate() + 7);
+      else if (state.view === 'month') state.currentDate.setMonth(state.currentDate.getMonth() + 1);
       render();
     };
   }
