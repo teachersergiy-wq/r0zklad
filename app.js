@@ -3,6 +3,17 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_XYvCzMPGQjhT0AT2r2v3dw_zZIesIJB
 
 const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
 
+// 7 дискретних м'яких (пастельних) кольорів
+const PASTEL_COLORS = [
+  '#dbeafe', // Ніжно-синій
+  '#dcfce7', // Ніжно-зелений
+  '#fef3c7', // Ніжно-жовтий
+  '#f3e8ff', // Ніжно-бузковий
+  '#ffe4e6', // Ніжно-рожевий
+  '#e0f2fe', // Ніжно-голубий
+  '#ffedd5'  // Ніжно-помаранчевий
+];
+
 let state = {
   key: null,
   students: [],
@@ -10,7 +21,8 @@ let state = {
   currentDate: new Date(),
   view: 'week',
   isEditMode: false,
-  editingLessonId: null
+  editingLessonId: null,
+  selectedNewStudentColor: PASTEL_COLORS[0]
 };
 
 const elements = {
@@ -28,7 +40,7 @@ const elements = {
   studentsModal: document.getElementById('students-modal'),
   closeStudentsModalBtn: document.getElementById('close-students-modal-btn'),
   newStudentName: document.getElementById('new-student-name'),
-  newStudentColor: document.getElementById('new-student-color'),
+  newStudentSwatches: document.getElementById('new-student-swatches'),
   addStudentBtn: document.getElementById('add-student-btn'),
   studentsList: document.getElementById('students-list'),
 
@@ -56,12 +68,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await loadSchedule();
   sanitizeState();
+  renderNewStudentSwatches();
   render();
 });
 
 function initTimeOptions() {
   elements.lessonHourSelect.innerHTML = '';
-  for (let h = 9; h <= 21; h++) {
+  for (let h = 8; h <= 22; h++) {
     const hourStr = String(h).padStart(2, '0');
     const opt = document.createElement('option');
     opt.value = hourStr;
@@ -88,7 +101,9 @@ function sanitizeState() {
   state.students.forEach((s, idx) => {
     s.id = s.id ? String(s.id) : String(Date.now() + idx);
     s.name = s.name || `Учень ${idx + 1}`;
-    s.color = s.color || '#3b82f6';
+    if (!PASTEL_COLORS.includes(s.color)) {
+      s.color = PASTEL_COLORS[idx % PASTEL_COLORS.length];
+    }
   });
 
   state.lessons.forEach((l, idx) => {
@@ -111,7 +126,7 @@ async function loadSchedule() {
         loaded = true;
       }
     } catch (e) {
-      console.warn('Supabase loading fallback to LocalStorage');
+      console.warn('Supabase fallback to LocalStorage');
     }
   }
 
@@ -152,6 +167,20 @@ function render() {
   renderGrid();
 }
 
+function renderNewStudentSwatches() {
+  elements.newStudentSwatches.innerHTML = '';
+  PASTEL_COLORS.forEach(color => {
+    const swatch = document.createElement('div');
+    swatch.className = `color-swatch ${color === state.selectedNewStudentColor ? 'selected' : ''}`;
+    swatch.style.backgroundColor = color;
+    swatch.onclick = () => {
+      state.selectedNewStudentColor = color;
+      renderNewStudentSwatches();
+    };
+    elements.newStudentSwatches.appendChild(swatch);
+  });
+}
+
 function updateViewButtons() {
   [elements.viewDayBtn, elements.viewWeekBtn, elements.viewMonthBtn].forEach(btn => btn.classList.remove('active'));
   if (state.view === 'day') elements.viewDayBtn.classList.add('active');
@@ -161,12 +190,12 @@ function updateViewButtons() {
 
 function updateDateDisplay() {
   if (state.view === 'day') {
-    elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+    elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' });
   } else if (state.view === 'week') {
     const start = getStartOfWeek(state.currentDate);
     const end = new Date(start);
     end.setDate(start.getDate() + 6);
-    elements.currentDateDisplay.textContent = `${start.getDate()} ${start.toLocaleDateString('uk-UA', {month:'short'})} - ${end.getDate()} ${end.toLocaleDateString('uk-UA', {month:'short', year:'numeric'})}`;
+    elements.currentDateDisplay.textContent = `${start.getDate()} ${start.toLocaleDateString('uk-UA', {month:'short'})} - ${end.getDate()} ${end.toLocaleDateString('uk-UA', {month:'short'})}`;
   } else if (state.view === 'month') {
     elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
   }
@@ -177,7 +206,7 @@ function renderStudentsList() {
   if (state.students.length === 0) {
     const emptyMsg = document.createElement('div');
     emptyMsg.style.cssText = 'color:#64748b; font-size:0.88rem; text-align:center; padding:12px;';
-    emptyMsg.textContent = 'Список учнів порожній. Додайте першого учня вище.';
+    emptyMsg.textContent = 'Список порожній. Додайте учня вище.';
     elements.studentsList.appendChild(emptyMsg);
     return;
   }
@@ -186,20 +215,13 @@ function renderStudentsList() {
     const item = document.createElement('div');
     item.className = 'student-item';
 
-    const colorInput = document.createElement('input');
-    colorInput.type = 'color';
-    colorInput.value = student.color || '#3b82f6';
-    colorInput.style.cssText = 'width:34px; height:34px; border:none; padding:0; cursor:pointer; border-radius:4px; background:none;';
-    colorInput.onchange = async (e) => {
-      student.color = e.target.value;
-      await saveSchedule();
-      render();
-    };
+    const headerRow = document.createElement('div');
+    headerRow.className = 'student-item-header';
 
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.value = student.name || '';
-    nameInput.style.cssText = 'flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-weight:600; font-size:0.9rem;';
+    nameInput.style.cssText = 'flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-weight:600; font-size:0.9rem; color:#1e293b;';
     nameInput.onchange = async (e) => {
       const val = e.target.value.trim();
       if (val) {
@@ -225,9 +247,26 @@ function renderStudentsList() {
       }
     };
 
-    item.appendChild(colorInput);
-    item.appendChild(nameInput);
-    item.appendChild(deleteBtn);
+    headerRow.appendChild(nameInput);
+    headerRow.appendChild(deleteBtn);
+
+    const swatchesDiv = document.createElement('div');
+    swatchesDiv.className = 'student-color-swatches';
+    
+    PASTEL_COLORS.forEach(color => {
+      const dot = document.createElement('div');
+      dot.className = `swatch-dot ${student.color === color ? 'active' : ''}`;
+      dot.style.backgroundColor = color;
+      dot.onclick = async () => {
+        student.color = color;
+        await saveSchedule();
+        render();
+      };
+      swatchesDiv.appendChild(dot);
+    });
+
+    item.appendChild(headerRow);
+    item.appendChild(swatchesDiv);
 
     elements.studentsList.appendChild(item);
   });
@@ -295,10 +334,31 @@ function renderGrid() {
     elements.calendarGrid.appendChild(header);
   }
 
-  const startHour = state.isEditMode ? 9 : 17;
-  const endHour = 21;
+  // Діапазон вільних годин: 17:00 - 22:00 (тобто 17, 18, 19, 20, 21) або з 09:00 якщо увімкнено чекбокс
+  const baseStart = state.isEditMode ? 9 : 17;
+  const baseEnd = 21;
 
-  for (let h = startHour; h <= endHour; h++) {
+  const hoursSet = new Set();
+  for (let h = baseStart; h <= baseEnd; h++) {
+    hoursSet.add(h);
+  }
+
+  // Завжди додаємо години, де є заплановані/проведені уроки у даному виді
+  daysDates.forEach(date => {
+    const dateISO = formatDateISO(date);
+    state.lessons.forEach(l => {
+      if (l.date === dateISO) {
+        const lHour = parseInt((l.time || '00:00').split(':')[0], 10);
+        if (!isNaN(lHour)) {
+          hoursSet.add(lHour);
+        }
+      }
+    });
+  });
+
+  const sortedHours = Array.from(hoursSet).sort((a, b) => a - b);
+
+  sortedHours.forEach(h => {
     const timeStr = `${String(h).padStart(2, '0')}:00`;
 
     const timeLabel = document.createElement('div');
@@ -323,9 +383,11 @@ function renderGrid() {
           slot.appendChild(card);
         });
       } else {
+        const isBaseFreeHour = h >= baseStart && h <= baseEnd;
+
         const freeSlot = document.createElement('div');
-        freeSlot.className = 'slot-free';
-        freeSlot.textContent = 'Вільно';
+        freeSlot.className = `slot-free ${!isBaseFreeHour ? 'out-of-range' : ''}`;
+        freeSlot.textContent = isBaseFreeHour ? 'Вільно' : '';
 
         freeSlot.ondragover = (e) => { e.preventDefault(); freeSlot.classList.add('drag-over'); };
         freeSlot.ondragleave = () => freeSlot.classList.remove('drag-over');
@@ -341,14 +403,15 @@ function renderGrid() {
 
       elements.calendarGrid.appendChild(slot);
     });
-  }
+  });
 }
 
 function createLessonCard(lesson) {
   const student = state.students.find(s => String(s.id) === String(lesson.studentId));
   const card = document.createElement('div');
   card.className = 'lesson-card';
-  card.style.backgroundColor = student ? (student.color || '#3b82f6') : '#64748b';
+  card.style.backgroundColor = student ? (student.color || PASTEL_COLORS[0]) : '#e2e8f0';
+  card.style.color = '#1e293b'; // Темно-сірий колір тексту
   card.draggable = true;
 
   const isPaid = lesson.paid === true || lesson.paid === 'true';
@@ -358,12 +421,12 @@ function createLessonCard(lesson) {
   topRow.style.cssText = 'display:flex; justify-content:space-between; align-items:flex-start; gap:4px;';
 
   const titleSpan = document.createElement('span');
-  titleSpan.style.cssText = 'font-weight:bold; font-size:0.83rem; line-height:1.2; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+  titleSpan.style.cssText = 'font-weight:700; font-size:0.83rem; color:#1e293b; line-height:1.2; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
   titleSpan.textContent = `${lesson.time || ''} ${student ? student.name : 'Учень'}`;
 
   const deleteBtn = document.createElement('span');
   deleteBtn.title = 'Видалити урок';
-  deleteBtn.style.cssText = 'cursor:pointer; font-size:1.2rem; line-height:0.7; opacity:0.8; font-weight:bold; padding:2px;';
+  deleteBtn.style.cssText = 'cursor:pointer; font-size:1.2rem; line-height:0.7; color:#64748b; font-weight:bold; padding:2px;';
   deleteBtn.innerHTML = '&times;';
   deleteBtn.onclick = async (e) => {
     e.stopPropagation();
@@ -382,12 +445,14 @@ function createLessonCard(lesson) {
 
   const paidBadge = document.createElement('span');
   paidBadge.className = 'badge';
-  paidBadge.style.backgroundColor = isPaid ? '#16a34a' : '#dc2626';
+  paidBadge.style.backgroundColor = isPaid ? '#dcfce7' : '#fee2e2';
+  paidBadge.style.color = isPaid ? '#15803d' : '#991b1b';
   paidBadge.textContent = isPaid ? 'Оплачено' : 'Не опл.';
 
   const statusBadge = document.createElement('span');
   statusBadge.className = 'badge';
-  statusBadge.style.backgroundColor = isCompleted ? '#475569' : '#2563eb';
+  statusBadge.style.backgroundColor = isCompleted ? '#e2e8f0' : '#dbeafe';
+  statusBadge.style.color = isCompleted ? '#334155' : '#1d4ed8';
   statusBadge.textContent = isCompleted ? 'Відбувся' : 'Заплан.';
 
   badgesRow.appendChild(paidBadge);
@@ -405,7 +470,7 @@ function createLessonCard(lesson) {
 }
 
 function renderMonthView() {
-  elements.calendarGrid.className = 'calendar-grid';
+  elements.calendarGrid.className = 'calendar-grid grid-month';
   elements.calendarGrid.style.gridTemplateColumns = 'repeat(7, 1fr)';
 
   const year = state.currentDate.getFullYear();
@@ -451,17 +516,26 @@ function renderMonthView() {
       const s = state.students.find(st => String(st.id) === String(l.studentId));
       const badge = document.createElement('div');
       badge.className = 'month-lesson-badge';
-      badge.style.backgroundColor = s ? (s.color || '#3b82f6') : '#3b82f6';
+      badge.style.backgroundColor = s ? (s.color || PASTEL_COLORS[0]) : '#e2e8f0';
 
       const isPaid = l.paid === true || l.paid === 'true';
+      const isCompleted = l.status === 'completed';
+
+      let indicatorsHTML = '';
+      if (isPaid) {
+        indicatorsHTML += '<span style="color:#15803d; font-weight:bold; font-size:0.85rem;" title="Оплачено">$</span>';
+      }
+      if (isCompleted) {
+        indicatorsHTML += '<span style="color:#16a34a; font-weight:bold; font-size:0.85rem;" title="Відбувся">✓</span>';
+      }
 
       const textSpan = document.createElement('span');
-      textSpan.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+      textSpan.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#1e293b; font-weight:600;';
       textSpan.innerHTML = `<strong>${l.time || ''}</strong> ${s ? s.name : ''}`;
 
       const iconSpan = document.createElement('span');
-      iconSpan.style.cssText = 'font-size:0.65rem; background:rgba(0,0,0,0.25); padding:1px 4px; border-radius:2px; flex-shrink:0;';
-      iconSpan.textContent = isPaid ? '✓' : '✗';
+      iconSpan.style.cssText = 'display:flex; align-items:center; gap:2px; flex-shrink:0;';
+      iconSpan.innerHTML = indicatorsHTML;
 
       badge.appendChild(textSpan);
       badge.appendChild(iconSpan);
@@ -530,13 +604,17 @@ function setupEventListeners() {
 
   elements.addStudentBtn.onclick = async () => {
     const name = elements.newStudentName.value.trim();
-    const color = elements.newStudentColor.value;
     if (!name) {
       alert("Будь ласка, введіть ім'я учня!");
       return;
     }
 
-    state.students.push({ id: Date.now().toString(), name, color });
+    state.students.push({
+      id: Date.now().toString(),
+      name,
+      color: state.selectedNewStudentColor
+    });
+
     elements.newStudentName.value = '';
     await saveSchedule();
     render();
@@ -544,7 +622,7 @@ function setupEventListeners() {
 
   elements.addLessonBtn.onclick = () => {
     if (state.students.length === 0) {
-      alert('Спочатку додайте хоча б одного учня в меню "Учні"!');
+      alert('Спочатку додайте хоча б одного учня!');
       elements.studentsModal.classList.remove('hidden');
       return;
     }
