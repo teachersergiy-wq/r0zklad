@@ -7,104 +7,150 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background: #f8fafc; margin: 0; padding: 20px; color: #1e293b; }
+    body { background: #f8fafc; margin: 0; padding: 16px; color: #1e293b; }
     
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
-    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; justify-content: space-between; }
     
-    button { cursor: pointer; padding: 8px 14px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; font-weight: 500; font-size: 0.9rem; transition: background 0.15s; }
+    .date-group, .view-group, .action-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+    button { cursor: pointer; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; font-weight: 500; font-size: 0.88rem; transition: background 0.15s; color: #1e293b; }
     button:hover { background: #f1f5f9; }
     button.primary { background: #2563eb; color: white; border: none; font-weight: 600; }
     button.primary:hover { background: #1d4ed8; }
-    button.danger { background: #ef4444; color: white; border: none; padding: 6px 12px; font-size: 0.82rem; border-radius: 6px; font-weight: 500; }
+    button.danger { background: #ef4444; color: white; border: none; padding: 6px 10px; font-size: 0.82rem; border-radius: 6px; font-weight: 500; }
     button.danger:hover { background: #dc2626; }
     button.active { background: #2563eb; color: white; border-color: #2563eb; font-weight: bold; }
 
-    .edit-mode-toggle { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; background: #fff; padding: 7px 12px; border-radius: 6px; border: 1px solid #cbd5e1; user-select: none; }
+    .edit-mode-toggle { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; background: #fff; padding: 7px 12px; border-radius: 6px; border: 1px solid #cbd5e1; user-select: none; color: #334155; }
 
-    .calendar-grid { display: grid; gap: 8px; margin-top: 10px; }
-    .grid-week { grid-template-columns: 60px repeat(7, 1fr); }
-    .grid-day { grid-template-columns: 60px 1fr; }
+    /* Контейнер сітки з горизонтальним скролом для мобільних пристроїв */
+    .calendar-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 8px; }
+
+    .calendar-grid { display: grid; gap: 8px; margin-top: 10px; min-width: 100%; }
+    .grid-week { grid-template-columns: 55px repeat(7, 1fr); min-width: 680px; }
+    .grid-day { grid-template-columns: 55px 1fr; }
+    .grid-month { min-width: 580px; }
     
-    .time-slot { border-top: 1px dashed #e2e8f0; min-height: 60px; display: flex; flex-direction: column; gap: 4px; padding: 2px; position: relative; justify-content: center; }
-    .time-label { font-size: 0.8rem; color: #64748b; font-weight: 600; align-items: flex-end; justify-content: center; padding-right: 10px; border: none; }
+    .time-slot { border-top: 1px dashed #e2e8f0; min-height: 56px; display: flex; flex-direction: column; gap: 4px; padding: 2px; position: relative; justify-content: center; }
+    .time-label { font-size: 0.8rem; color: #64748b; font-weight: 600; align-items: flex-end; justify-content: center; padding-right: 8px; border: none; }
     
-    .day-header { font-weight: bold; text-align: center; padding: 10px 4px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; }
+    .day-header { font-weight: 700; text-align: center; padding: 8px 4px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.88rem; color: #1e293b; }
     .day-header.today { background: #dbeafe !important; border: 2px solid #2563eb !important; color: #1e40af !important; }
     
-    .slot-free { border: 1px dashed #cbd5e1; border-radius: 6px; color: #94a3b8; font-size: 0.75rem; min-height: 52px; width: 100%; display: flex; align-items: center; justify-content: center; background: #fafafa; }
+    .slot-free { border: 1px dashed #cbd5e1; border-radius: 6px; color: #94a3b8; font-size: 0.75rem; min-height: 48px; width: 100%; display: flex; align-items: center; justify-content: center; background: #fafafa; font-weight: 500; }
+    .slot-free.out-of-range { border: 1px dashed #f1f5f9; background: transparent; }
     .slot-free.drag-over { background: #e0e7ff; border-color: #6366f1; }
     
-    .lesson-card { width: 100%; border-radius: 6px; padding: 6px 8px; color: white; font-size: 0.8rem; display: flex; flex-direction: column; justify-content: space-between; cursor: grab; box-shadow: 0 2px 4px rgba(0,0,0,0.08); position: relative; gap: 4px; }
-    .lesson-card:hover { filter: brightness(0.95); }
+    .lesson-card { width: 100%; border-radius: 6px; padding: 6px 8px; color: #1e293b; font-size: 0.8rem; display: flex; flex-direction: column; justify-content: space-between; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: relative; gap: 4px; border: 1px solid rgba(0,0,0,0.06); }
+    .lesson-card:hover { filter: brightness(0.97); }
     .lesson-card:active { cursor: grabbing; }
     .lesson-badges { display: flex; gap: 4px; flex-wrap: wrap; }
-    .badge { padding: 2px 5px; border-radius: 3px; font-size: 0.68rem; font-weight: 600; }
+    .badge { padding: 2px 5px; border-radius: 4px; font-size: 0.68rem; font-weight: 700; }
 
     /* Сітка місяця */
-    .month-cell { border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px; min-height: 105px; background: #fff; font-size: 0.8rem; display: flex; flex-direction: column; gap: 4px; }
+    .month-cell { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px; min-height: 95px; background: #fff; font-size: 0.8rem; display: flex; flex-direction: column; gap: 4px; }
     .month-cell.today { background: #eff6ff !important; border: 2px solid #2563eb !important; }
     .month-cell.padding-cell { background: #f8fafc; border-color: #f1f5f9; opacity: 0.5; }
-    .month-day-num { font-weight: bold; font-size: 0.85rem; color: #334155; text-align: right; }
-    .month-day-num.today-num { color: #2563eb; font-size: 0.95rem; }
+    .month-day-num { font-weight: 700; font-size: 0.82rem; color: #334155; text-align: right; }
+    .month-day-num.today-num { color: #2563eb; font-size: 0.92rem; }
     .month-day-num.muted { color: #94a3b8; }
     
-    .month-lesson-badge { padding: 4px 6px; border-radius: 4px; color: white; font-size: 0.73rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-    .month-lesson-badge:hover { filter: brightness(0.92); }
+    .month-lesson-badge { padding: 3px 5px; border-radius: 4px; color: #1e293b; font-size: 0.73rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.05); }
+    .month-lesson-badge:hover { filter: brightness(0.95); }
+
+    /* Палітра кольорів */
+    .color-swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .color-swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #cbd5e1; cursor: pointer; transition: transform 0.15s, border-color 0.15s; }
+    .color-swatch:hover { transform: scale(1.1); }
+    .color-swatch.selected { border-color: #2563eb; transform: scale(1.15); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25); }
+
+    .student-color-swatches { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+    .swatch-dot { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid #cbd5e1; cursor: pointer; transition: transform 0.1s; }
+    .swatch-dot.active { border-color: #2563eb; transform: scale(1.2); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3); }
 
     /* Модальні вікна */
-    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(2px); }
+    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(2px); padding: 12px; }
     .modal.hidden { display: none; }
-    .modal-content { background: #fff; padding: 24px; border-radius: 12px; max-width: 460px; width: 92%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+    .modal-content { background: #fff; padding: 20px; border-radius: 12px; max-width: 450px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
     
     .form-group { margin-bottom: 14px; }
     .form-group label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.88rem; color: #334155; }
-    .form-group input, .form-group select { width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; outline: none; background: #fff; }
+    .form-group input, .form-group select { width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; outline: none; background: #fff; color: #1e293b; }
     .form-group input:focus, .form-group select:focus { border-color: #2563eb; }
     .flex-row { display: flex; gap: 10px; align-items: center; }
     
-    .student-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; background: #f8fafc; gap: 10px; }
+    .student-item { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; background: #f8fafc; }
+    .student-item-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+    /* Адаптація під смартфони */
+    @media (max-width: 640px) {
+      body { padding: 10px; }
+      .header h1 { font-size: 1.25rem; text-align: center; width: 100%; margin-bottom: 6px; }
+      .controls { flex-direction: column; align-items: stretch; gap: 10px; }
+      .date-group { justify-content: space-between; width: 100%; }
+      .view-group, .action-group { width: 100%; justify-content: space-between; }
+      .view-group button, .action-group button { flex: 1; text-align: center; }
+      #current-date-display { flex: 1; font-size: 0.9rem; }
+      .edit-mode-toggle { justify-content: center; }
+    }
   </style>
 </head>
 <body>
 
   <div class="header">
-    <h1 style="margin:0; font-size: 1.5rem; font-weight: 700; color: #0f172a;">Розклад занять</h1>
+    <h1 style="margin:0; font-weight: 700; color: #0f172a;">Розклад занять</h1>
     <div class="controls">
-      <button id="today-btn">Сьогодні</button>
-      <button id="prev-date-btn">&lt;</button>
-      <span id="current-date-display" style="font-weight: 700; min-width: 160px; text-align: center; font-size: 0.95rem;"></span>
-      <button id="next-date-btn">&gt;</button>
+      <div class="date-group">
+        <button id="today-btn">Сьогодні</button>
+        <button id="prev-date-btn">&lt;</button>
+        <span id="current-date-display" style="font-weight: 700; text-align: center;"></span>
+        <button id="next-date-btn">&gt;</button>
+      </div>
       
-      <div style="margin-left: 6px; display: flex; gap: 4px;">
+      <div class="view-group">
         <button id="view-day-btn">День</button>
         <button id="view-week-btn">Тиждень</button>
         <button id="view-month-btn">Місяць</button>
       </div>
 
       <label class="edit-mode-toggle">
-        <input type="checkbox" id="edit-mode-checkbox"> Редагування (09:00 - 17:00)
+        <input type="checkbox" id="edit-mode-checkbox"> 09:00 - 17:00
       </label>
 
-      <button id="manage-students-btn">Учні</button>
-      <button id="add-lesson-btn" class="primary">+ Урок</button>
+      <div class="action-group">
+        <button id="manage-students-btn">Учні</button>
+        <button id="add-lesson-btn" class="primary">+ Урок</button>
+      </div>
     </div>
   </div>
 
-  <div id="calendar-grid"></div>
+  <div class="calendar-container">
+    <div id="calendar-grid"></div>
+  </div>
 
-  <!-- Модальне вікно учнів -->
+  <!-- Модальне вікно управління учнями -->
   <div id="students-modal" class="modal hidden">
     <div class="modal-content">
-      <h2 style="margin-top:0; font-size:1.3rem;">Управління учнями</h2>
-      <div class="form-group flex-row">
-        <input type="text" id="new-student-name" placeholder="Ім'я учня" style="flex:1;">
-        <input type="color" id="new-student-color" value="#3b82f6" style="width: 42px; height: 38px; padding:0; border:none; cursor:pointer;">
-        <button id="add-student-btn" type="button" class="primary">Додати</button>
+      <h2 style="margin-top:0; font-size:1.25rem; color:#0f172a;">Управління учнями</h2>
+      
+      <div class="form-group">
+        <label>Ім'я учня</label>
+        <input type="text" id="new-student-name" placeholder="Введіть ім'я">
       </div>
-      <div id="students-list" style="margin-top: 15px; max-height: 320px; overflow-y: auto;"></div>
-      <div style="text-align: right; margin-top: 20px;">
-        <button id="close-students-modal-btn">Закрити</button>
+
+      <div class="form-group">
+        <label>Колір картки (пастельний)</label>
+        <div id="new-student-swatches" class="color-swatches"></div>
+      </div>
+
+      <button id="add-student-btn" type="button" class="primary" style="width: 100%; margin-top: 4px;">+ Додати учня</button>
+
+      <h3 style="font-size: 1rem; margin-top: 20px; margin-bottom: 10px; color:#334155;">Список учнів</h3>
+      <div id="students-list" style="max-height: 280px; overflow-y: auto;"></div>
+
+      <div style="text-align: right; margin-top: 16px;">
+        <button id="close-students-modal-btn" style="width: 100%;">Закрити</button>
       </div>
     </div>
   </div>
@@ -112,7 +158,7 @@
   <!-- Модальне вікно додавання/редагування уроку -->
   <div id="lesson-modal" class="modal hidden">
     <div class="modal-content">
-      <h2 style="margin-top:0; font-size:1.3rem;" id="lesson-modal-title">Додати урок</h2>
+      <h2 style="margin-top:0; font-size:1.25rem; color:#0f172a;" id="lesson-modal-title">Додати урок</h2>
       
       <div class="form-group">
         <label>Оберіть учня</label>
@@ -163,9 +209,9 @@
         </select>
       </div>
 
-      <div class="flex-row" style="justify-content: flex-end; margin-top: 24px;">
-        <button id="close-lesson-modal-btn" type="button">Скасувати</button>
-        <button id="save-lesson-btn" type="button" class="primary">Зберегти</button>
+      <div class="flex-row" style="justify-content: flex-end; margin-top: 20px;">
+        <button id="close-lesson-modal-btn" type="button" style="flex:1;">Скасувати</button>
+        <button id="save-lesson-btn" type="button" class="primary" style="flex:1;">Зберегти</button>
       </div>
     </div>
   </div>
