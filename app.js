@@ -5,6 +5,10 @@ const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE
 
 // 7 дискретних м'яких (пастельних) кольорів
 const PASTEL_COLORS = [
+  '#fae8ff', // Бузковий
+  '#f5f5f4', // Теплий сірий
+  '#fce7f3', // Пастельно-рожевий
+  '#ccfbf1', // Світло-бірюзовий
   '#dbeafe', // Ніжно-синій
   '#dcfce7', // Ніжно-зелений
   '#fef3c7', // Ніжно-жовтий
