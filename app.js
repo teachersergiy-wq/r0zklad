@@ -17,13 +17,17 @@ const PASTEL_COLORS = [
 const MONTH_NAMES_SHORT = ['січ.', 'лют.', 'берез.', 'квіт.', 'трав.', 'черв.', 'лип.', 'серп.', 'верес.', 'жовт.', 'лист.', 'груд.'];
 const DAY_NAMES_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
 
+const DEFAULT_PAID_AMOUNT = 175;
+const DEFAULT_PAID_METHOD = 'МоноБанк';
+
 let state = {
   key: null,
   students: [],
   lessons: [],
+  blockedSlots: [], // { date, time } — слоти, позначені як "недоступно"
   currentDate: new Date(),
   view: 'day', // За замовчуванням вкладка "День"
-  isEditMode: false,
+  isEditMode: false, // Режим редагування/налаштувань: розширені години, недоступні слоти, видалення уроків, минулі дати
   editingLessonId: null,
   selectedNewStudentColor: PASTEL_COLORS[0]
 };
@@ -64,8 +68,22 @@ const elements = {
   lessonStatusSelect: document.getElementById('lesson-status-select'),
   lessonRepeatSelect: document.getElementById('lesson-repeat-select'),
   repeatGroup: document.getElementById('repeat-group'),
-  studentSelectGroup: document.getElementById('student-select-group'),
-  paidSelectGroup: document.getElementById('paid-select-group')
+
+  paymentDetailsGroup: document.getElementById('payment-details-group'),
+  lessonPaidAmount: document.getElementById('lesson-paid-amount'),
+  lessonPaidDate: document.getElementById('lesson-paid-date'),
+  lessonPaidMethod: document.getElementById('lesson-paid-method'),
+
+  lessonTopicInput: document.getElementById('lesson-topic-input'),
+  lessonHomeworkInput: document.getElementById('lesson-homework-input'),
+
+  lessonPastNotice: document.getElementById('lesson-past-notice'),
+  deleteLessonBtn: document.getElementById('delete-lesson-btn'),
+
+  studentLessonsModal: document.getElementById('student-lessons-modal'),
+  studentLessonsTitle: document.getElementById('student-lessons-title'),
+  studentLessonsList: document.getElementById('student-lessons-list'),
+  closeStudentLessonsModalBtn: document.getElementById('close-student-lessons-modal-btn')
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -110,6 +128,7 @@ function initTimeOptions() {
 function sanitizeState() {
   if (!Array.isArray(state.students)) state.students = [];
   if (!Array.isArray(state.lessons)) state.lessons = [];
+  if (!Array.isArray(state.blockedSlots)) state.blockedSlots = [];
 
   state.students.forEach((s, idx) => {
     s.id = s.id ? String(s.id) : String(Date.now() + idx);
@@ -123,14 +142,17 @@ function sanitizeState() {
     l.id = l.id ? String(l.id) : String(Date.now() + '_' + idx);
     l.studentId = String(l.studentId || '');
     l.paid = l.paid === true || l.paid === 'true';
-
-    // Адаптація старих статусів
-    if (!l.status || l.status === 'planned' || l.status === 'completed') {
-      l.status = l.studentId ? 'busy' : 'free';
-    } else if (!['busy', 'free', 'unavailable'].includes(l.status)) {
-      l.status = 'busy';
-    }
+    l.status = l.status || 'planned';
+    l.topic = l.topic || '';
+    l.homework = l.homework || '';
+    l.paidAmount = l.paid ? (l.paidAmount != null && l.paidAmount !== '' ? Number(l.paidAmount) : DEFAULT_PAID_AMOUNT) : null;
+    l.paidDate = l.paid ? (l.paidDate || l.date) : null;
+    l.paidMethod = l.paid ? (l.paidMethod || DEFAULT_PAID_METHOD) : null;
   });
+
+  state.blockedSlots = state.blockedSlots
+    .filter(b => b && b.date && b.time)
+    .map(b => ({ date: String(b.date), time: String(b.time) }));
 }
 
 async function loadSchedule() {
@@ -142,6 +164,7 @@ async function loadSchedule() {
       if (!error && data && data.data) {
         state.students = data.data.students || [];
         state.lessons = data.data.lessons || [];
+        state.blockedSlots = data.data.blockedSlots || [];
         loaded = true;
       }
     } catch (e) {
@@ -156,6 +179,7 @@ async function loadSchedule() {
         const parsed = JSON.parse(local);
         state.students = parsed.students || [];
         state.lessons = parsed.lessons || [];
+        state.blockedSlots = parsed.blockedSlots || [];
       } catch (e) { console.error(e); }
     }
   }
@@ -163,7 +187,7 @@ async function loadSchedule() {
 
 async function saveSchedule() {
   sanitizeState();
-  const payload = { students: state.students, lessons: state.lessons };
+  const payload = { students: state.students, lessons: state.lessons, blockedSlots: state.blockedSlots };
   localStorage.setItem('schedule_' + state.key, JSON.stringify(payload));
 
   if (db && state.key) {
@@ -250,6 +274,16 @@ function renderStudentsList() {
       }
     };
 
+    const historyBtn = document.createElement('button');
+    historyBtn.type = 'button';
+    historyBtn.className = 'small-btn';
+    historyBtn.textContent = 'Уроки';
+    historyBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openStudentLessonsModal(student.id);
+    };
+
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'danger';
     deleteBtn.type = 'button';
@@ -267,6 +301,7 @@ function renderStudentsList() {
     };
 
     headerRow.appendChild(nameInput);
+    headerRow.appendChild(historyBtn);
     headerRow.appendChild(deleteBtn);
 
     const swatchesDiv = document.createElement('div');
@@ -322,6 +357,37 @@ function isToday(date) {
          date.getFullYear() === today.getFullYear();
 }
 
+function isPastDate(dateISO) {
+  return dateISO < formatDateISO(new Date());
+}
+
+function isSlotBlocked(dateISO, timeStr) {
+  return state.blockedSlots.some(b => b.date === dateISO && b.time === timeStr);
+}
+
+async function toggleBlockedSlot(dateISO, timeStr) {
+  const idx = state.blockedSlots.findIndex(b => b.date === dateISO && b.time === timeStr);
+  if (idx >= 0) {
+    state.blockedSlots.splice(idx, 1);
+  } else {
+    state.blockedSlots.push({ date: dateISO, time: timeStr });
+  }
+  await saveSchedule();
+}
+
+function formatDateDisplay(dateISO) {
+  const [y, m, d] = String(dateISO).split('-').map(Number);
+  if (!y || !m || !d) return dateISO || '';
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
 function createDayHeaderElement(date) {
   const dayIdx = (date.getDay() + 6) % 7;
   const header = document.createElement('div');
@@ -374,6 +440,7 @@ function renderGrid() {
   renderTimeSlotsForDays(elements.calendarGrid, daysDates);
 }
 
+// Повідомлення для тижневого режиму на мобільних пристроях (блок по 2 дні)
 function renderWeekViewMobile() {
   elements.calendarGrid.className = 'calendar-grid';
 
@@ -385,6 +452,7 @@ function renderWeekViewMobile() {
     daysDates.push(d);
   }
 
+  // Групуємо дні по 2 (Пн-Вт, Ср-Чт, Пт-Сб, Нд)
   const dayChunks = [];
   for (let i = 0; i < daysDates.length; i += 2) {
     dayChunks.push(daysDates.slice(i, i + 2));
@@ -423,15 +491,27 @@ function renderTimeSlotsForDays(container, daysDates) {
         }
       }
     });
+    state.blockedSlots.forEach(b => {
+      if (b.date === dateISO) {
+        const bHour = parseInt((b.time || '00:00').split(':')[0], 10);
+        if (!isNaN(bHour)) {
+          hoursSet.add(bHour);
+        }
+      }
+    });
   });
 
   const sortedHours = Array.from(hoursSet).sort((a, b) => a - b);
+  // Слоти "недоступно" показуємо лише у режимі "День" або в режимі редагування
+  const showUnavailableSlots = state.view === 'day' || state.isEditMode;
 
   sortedHours.forEach(h => {
     const timeStr = `${String(h).padStart(2, '0')}:00`;
+    const isBaseFreeHour = h >= baseStart && h <= baseEnd;
 
     daysDates.forEach(date => {
       const dateISO = formatDateISO(date);
+      const pastDate = isPastDate(dateISO);
       const slot = document.createElement('div');
       slot.className = 'time-slot';
 
@@ -443,38 +523,56 @@ function renderTimeSlotsForDays(container, daysDates) {
 
       if (slotLessons.length > 0) {
         slotLessons.forEach(lesson => {
-          if (lesson.status === 'unavailable') {
-            const isVisible = (state.view === 'day') || state.isEditMode;
-            if (isVisible) {
-              const unavailSlot = document.createElement('div');
-              unavailSlot.className = 'slot-unavailable';
-              unavailSlot.textContent = `${timeStr} недоступно`;
-              unavailSlot.onclick = () => openEditLessonModal(lesson.id);
-              slot.appendChild(unavailSlot);
-            } else {
-              const hiddenSlot = document.createElement('div');
-              hiddenSlot.className = 'slot-hidden';
-              slot.appendChild(hiddenSlot);
-            }
-          } else if (lesson.status === 'free') {
-            const freeSlot = createFreeSlotElement(timeStr, dateISO, lesson);
-            slot.appendChild(freeSlot);
-          } else {
-            const card = createLessonCard(lesson);
-            slot.appendChild(card);
-          }
+          const card = createLessonCard(lesson, pastDate);
+          slot.appendChild(card);
         });
-      } else {
-        const isBaseFreeHour = h >= baseStart && h <= baseEnd;
-
-        if (isBaseFreeHour) {
-          const freeSlot = createFreeSlotElement(timeStr, dateISO, null);
-          slot.appendChild(freeSlot);
+      } else if (isSlotBlocked(dateISO, timeStr)) {
+        if (showUnavailableSlots) {
+          const unavailableSlot = document.createElement('div');
+          unavailableSlot.className = 'slot-unavailable';
+          unavailableSlot.textContent = `${timeStr} Недоступно`;
+          if (state.isEditMode) {
+            unavailableSlot.style.cursor = 'pointer';
+            unavailableSlot.title = "Натисніть, щоб зробити слот доступним";
+            unavailableSlot.onclick = async () => {
+              await toggleBlockedSlot(dateISO, timeStr);
+              render();
+            };
+          }
+          slot.appendChild(unavailableSlot);
         } else {
-          const emptySlot = document.createElement('div');
-          emptySlot.className = 'slot-free out-of-range';
-          slot.appendChild(emptySlot);
+          // Приховано в режимах "Тиждень"/"Місяць" — лише порожній заповнювач для вирівнювання сітки
+          const blank = document.createElement('div');
+          blank.className = 'slot-free out-of-range';
+          slot.appendChild(blank);
         }
+      } else {
+        const freeSlot = document.createElement('div');
+        freeSlot.className = `slot-free ${!isBaseFreeHour ? 'out-of-range' : ''}`;
+        freeSlot.textContent = isBaseFreeHour ? `${timeStr} Вільно` : '';
+
+        const canInteract = isBaseFreeHour && (!pastDate || state.isEditMode);
+        if (canInteract) {
+          if (state.isEditMode) {
+            freeSlot.style.cursor = 'pointer';
+            freeSlot.title = "Натисніть, щоб позначити слот недоступним";
+            freeSlot.onclick = async () => {
+              await toggleBlockedSlot(dateISO, timeStr);
+              render();
+            };
+          }
+
+          freeSlot.ondragover = (e) => { e.preventDefault(); freeSlot.classList.add('drag-over'); };
+          freeSlot.ondragleave = () => freeSlot.classList.remove('drag-over');
+          freeSlot.ondrop = async (e) => {
+            e.preventDefault();
+            freeSlot.classList.remove('drag-over');
+            const lessonId = e.dataTransfer.getData('text/plain');
+            await moveLesson(lessonId, dateISO, timeStr);
+          };
+        }
+
+        slot.appendChild(freeSlot);
       }
 
       container.appendChild(slot);
@@ -482,63 +580,22 @@ function renderTimeSlotsForDays(container, daysDates) {
   });
 }
 
-function createFreeSlotElement(timeStr, dateISO, existingLesson) {
-  const freeSlot = document.createElement('div');
-  freeSlot.className = 'slot-free';
-  freeSlot.textContent = `${timeStr} вільно`;
-
-  freeSlot.onclick = () => {
-    if (existingLesson) {
-      openEditLessonModal(existingLesson.id);
-    } else {
-      openAddLessonModalWithTime(dateISO, timeStr);
-    }
-  };
-
-  freeSlot.ondragover = (e) => { e.preventDefault(); freeSlot.classList.add('drag-over'); };
-  freeSlot.ondragleave = () => freeSlot.classList.remove('drag-over');
-  freeSlot.ondrop = async (e) => {
-    e.preventDefault();
-    freeSlot.classList.remove('drag-over');
-    const lessonId = e.dataTransfer.getData('text/plain');
-    await moveLesson(lessonId, dateISO, timeStr);
-  };
-
-  return freeSlot;
-}
-
-function createLessonCard(lesson) {
+function createLessonCard(lesson, pastDate) {
   const student = state.students.find(s => String(s.id) === String(lesson.studentId));
   const card = document.createElement('div');
   card.className = 'lesson-card';
   card.style.backgroundColor = student ? (student.color || PASTEL_COLORS[0]) : '#f5f5f4';
   card.style.color = '#1e293b';
-  card.draggable = true;
+
+  const canDrag = !pastDate || state.isEditMode;
+  card.draggable = canDrag;
 
   const isPaid = lesson.paid === true || lesson.paid === 'true';
+  const isCompleted = lesson.status === 'completed';
 
-  const topRow = document.createElement('div');
-  topRow.style.cssText = 'display:flex; justify-content:space-between; align-items:flex-start; gap:4px;';
-
-  const titleSpan = document.createElement('span');
-  titleSpan.style.cssText = 'font-weight:700; font-size:0.83rem; color:#1e293b; line-height:1.2; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+  const titleSpan = document.createElement('div');
+  titleSpan.style.cssText = 'font-weight:700; font-size:0.83rem; color:#1e293b; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
   titleSpan.textContent = `${lesson.time || ''} ${student ? student.name : 'Учень'}`;
-
-  const deleteBtn = document.createElement('span');
-  deleteBtn.title = 'Видалити урок';
-  deleteBtn.style.cssText = 'cursor:pointer; font-size:1.2rem; line-height:0.7; color:#64748b; font-weight:bold; padding:2px;';
-  deleteBtn.innerHTML = '&times;';
-  deleteBtn.onclick = async (e) => {
-    e.stopPropagation();
-    if (confirm('Видалити цей урок?')) {
-      state.lessons = state.lessons.filter(l => String(l.id) !== String(lesson.id));
-      await saveSchedule();
-      render();
-    }
-  };
-
-  topRow.appendChild(titleSpan);
-  topRow.appendChild(deleteBtn);
 
   const badgesRow = document.createElement('div');
   badgesRow.className = 'lesson-badges';
@@ -549,15 +606,24 @@ function createLessonCard(lesson) {
   paidBadge.style.color = isPaid ? '#15803d' : '#991b1b';
   paidBadge.textContent = isPaid ? 'Оплачено' : 'Не опл.';
 
-  badgesRow.appendChild(paidBadge);
+  const statusBadge = document.createElement('span');
+  statusBadge.className = 'badge';
+  statusBadge.style.backgroundColor = isCompleted ? '#e2e8f0' : '#dbeafe';
+  statusBadge.style.color = isCompleted ? '#334155' : '#1d4ed8';
+  statusBadge.textContent = isCompleted ? 'Відбувся' : 'Заплан.';
 
-  card.appendChild(topRow);
+  badgesRow.appendChild(paidBadge);
+  badgesRow.appendChild(statusBadge);
+
+  card.appendChild(titleSpan);
   card.appendChild(badgesRow);
 
   card.onclick = () => openEditLessonModal(lesson.id);
-  card.ondragstart = (e) => {
-    e.dataTransfer.setData('text/plain', String(lesson.id));
-  };
+  if (canDrag) {
+    card.ondragstart = (e) => {
+      e.dataTransfer.setData('text/plain', String(lesson.id));
+    };
+  }
 
   return card;
 }
@@ -596,36 +662,35 @@ function renderMonthView() {
     const cell = document.createElement('div');
     cell.className = `month-cell ${isCurrentToday ? 'today' : ''}`;
 
+    // Дати в Місяці — ВІДЦЕНТРОВАНІ та ЖИРНІ
     const numDiv = document.createElement('div');
     numDiv.className = `month-day-num ${isCurrentToday ? 'today-num' : ''}`;
     numDiv.textContent = day;
     cell.appendChild(numDiv);
 
-    // У режимі "Місяць" НЕ відображаються недоступні слоти
-    const dayLessons = state.lessons.filter(l => l.date === dateISO && l.status !== 'unavailable');
+    const dayLessons = state.lessons.filter(l => l.date === dateISO);
     dayLessons.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
     dayLessons.forEach(l => {
       const s = state.students.find(st => String(st.id) === String(l.studentId));
       const badge = document.createElement('div');
       badge.className = 'month-lesson-badge';
-      badge.style.backgroundColor = (l.status === 'busy' && s) ? (s.color || PASTEL_COLORS[0]) : '#f5f5f4';
+      badge.style.backgroundColor = s ? (s.color || PASTEL_COLORS[0]) : '#f5f5f4';
 
       const isPaid = l.paid === true || l.paid === 'true';
+      const isCompleted = l.status === 'completed';
 
       let indicatorsHTML = '';
-      if (l.status === 'busy' && isPaid) {
+      if (isPaid) {
         indicatorsHTML += '<span style="color:#15803d; font-weight:800; font-size:0.85rem;" title="Оплачено">$</span>';
+      }
+      if (isCompleted) {
+        indicatorsHTML += '<span style="color:#16a34a; font-weight:800; font-size:0.85rem;" title="Відбувся">✓</span>';
       }
 
       const textSpan = document.createElement('span');
       textSpan.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#1e293b; font-weight:600;';
-      
-      if (l.status === 'free') {
-        textSpan.innerHTML = `<strong>${l.time || ''}</strong> вільно`;
-      } else {
-        textSpan.innerHTML = `<strong>${l.time || ''}</strong> ${s ? s.name : 'Учень'}`;
-      }
+      textSpan.innerHTML = `<strong>${l.time || ''}</strong> ${s ? s.name : ''}`;
 
       const iconSpan = document.createElement('span');
       iconSpan.style.cssText = 'display:flex; align-items:center; gap:2px; flex-shrink:0;';
@@ -657,38 +722,35 @@ function renderMonthView() {
 
 async function moveLesson(lessonId, newDate, newTime) {
   const lesson = state.lessons.find(l => String(l.id) === String(lessonId));
-  if (lesson) {
-    lesson.date = newDate;
-    lesson.time = newTime;
-    await saveSchedule();
-    render();
+  if (!lesson) return;
+
+  if (!state.isEditMode && (isPastDate(lesson.date) || isPastDate(newDate))) {
+    alert('Переносити уроки на/з минулих дат можна лише через Налаштування.');
+    return;
   }
+
+  lesson.date = newDate;
+  lesson.time = newTime;
+  await saveSchedule();
+  render();
 }
 
-function toggleModalFieldsByStatus(status) {
-  const isBusy = status === 'busy';
-  if (elements.studentSelectGroup) elements.studentSelectGroup.style.display = isBusy ? 'block' : 'none';
-  if (elements.paidSelectGroup) elements.paidSelectGroup.style.display = isBusy ? 'block' : 'none';
-  if (elements.repeatGroup) {
-    elements.repeatGroup.style.display = (isBusy && !state.editingLessonId) ? 'block' : 'none';
-  }
+function togglePaymentDetailsVisibility() {
+  const isPaid = elements.lessonPaidSelect.value === 'true';
+  elements.paymentDetailsGroup.style.display = isPaid ? 'block' : 'none';
 }
 
-function openAddLessonModalWithTime(dateISO, timeStr) {
-  state.editingLessonId = null;
-  elements.lessonModalTitle.textContent = 'Додати / Налаштувати урок';
-  updateStudentSelectOptions();
-  elements.lessonDateInput.value = dateISO || formatDateISO(state.currentDate);
-
-  const parts = (timeStr || '18:00').split(':');
-  elements.lessonHourSelect.value = String(parts[0]).padStart(2, '0');
-  elements.lessonMinuteSelect.value = String(parts[1]).padStart(2, '0');
-
-  elements.lessonPaidSelect.value = 'false';
-  elements.lessonStatusSelect.value = 'busy';
-  toggleModalFieldsByStatus('busy');
-
-  elements.lessonModal.classList.remove('hidden');
+function setLessonFormEditable(editable) {
+  const controls = [
+    elements.lessonStudentSelect, elements.lessonDateInput,
+    elements.lessonHourSelect, elements.lessonMinuteSelect,
+    elements.lessonPaidSelect, elements.lessonStatusSelect,
+    elements.lessonTopicInput, elements.lessonHomeworkInput,
+    elements.lessonPaidAmount, elements.lessonPaidDate, elements.lessonPaidMethod
+  ];
+  controls.forEach(c => { if (c) c.disabled = !editable; });
+  elements.saveLessonBtn.style.display = editable ? 'block' : 'none';
+  elements.lessonPastNotice.style.display = editable ? 'none' : 'block';
 }
 
 function openEditLessonModal(lessonId) {
@@ -696,12 +758,9 @@ function openEditLessonModal(lessonId) {
   if (!lesson) return;
 
   state.editingLessonId = String(lessonId);
-  elements.lessonModalTitle.textContent = 'Редагувати слот / урок';
 
   updateStudentSelectOptions();
-  if (lesson.studentId) {
-    elements.lessonStudentSelect.value = String(lesson.studentId);
-  }
+  elements.lessonStudentSelect.value = String(lesson.studentId);
   elements.lessonDateInput.value = lesson.date;
 
   const parts = (lesson.time || '18:00').split(':');
@@ -709,15 +768,71 @@ function openEditLessonModal(lessonId) {
   elements.lessonMinuteSelect.value = String(parts[1]).padStart(2, '0');
 
   elements.lessonPaidSelect.value = String(lesson.paid);
+  elements.lessonStatusSelect.value = lesson.status || 'planned';
+  elements.lessonTopicInput.value = lesson.topic || '';
+  elements.lessonHomeworkInput.value = lesson.homework || '';
+  elements.lessonPaidAmount.value = lesson.paidAmount != null ? lesson.paidAmount : DEFAULT_PAID_AMOUNT;
+  elements.lessonPaidDate.value = lesson.paidDate || lesson.date;
+  elements.lessonPaidMethod.value = lesson.paidMethod || DEFAULT_PAID_METHOD;
+  togglePaymentDetailsVisibility();
 
-  const currentStatus = lesson.status || (lesson.studentId ? 'busy' : 'free');
-  elements.lessonStatusSelect.value = currentStatus;
-  toggleModalFieldsByStatus(currentStatus);
+  elements.repeatGroup.style.display = 'none';
+
+  const pastDate = isPastDate(lesson.date);
+  const editable = !pastDate || state.isEditMode;
+  elements.lessonModalTitle.textContent = editable ? 'Редагувати урок' : 'Перегляд уроку';
+  setLessonFormEditable(editable);
+
+  const canDelete = state.isEditMode && lesson.status === 'planned';
+  elements.deleteLessonBtn.style.display = canDelete ? 'block' : 'none';
 
   elements.lessonModal.classList.remove('hidden');
 }
 
+function openStudentLessonsModal(studentId) {
+  const student = state.students.find(s => String(s.id) === String(studentId));
+  if (!student) return;
+
+  elements.studentLessonsTitle.textContent = `Уроки: ${student.name}`;
+
+  const lessons = state.lessons
+    .filter(l => String(l.studentId) === String(studentId) && l.status === 'completed')
+    .sort((a, b) => `${b.date} ${b.time || ''}`.localeCompare(`${a.date} ${a.time || ''}`));
+
+  elements.studentLessonsList.innerHTML = '';
+
+  if (lessons.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'color:#64748b; font-size:0.88rem; text-align:center; padding:16px;';
+    empty.textContent = 'Ще немає проведених уроків.';
+    elements.studentLessonsList.appendChild(empty);
+  } else {
+    lessons.forEach(l => {
+      const isPaid = l.paid === true || l.paid === 'true';
+      const item = document.createElement('div');
+      item.className = 'lesson-history-item';
+
+      const paidText = isPaid
+        ? `Оплачено${l.paidAmount != null ? ` · ${l.paidAmount} грн` : ''}${l.paidMethod ? ` · ${escapeHtml(l.paidMethod)}` : ''}`
+        : 'Не оплачено';
+
+      item.innerHTML = `
+        <div class="lesson-history-header">
+          <strong>${escapeHtml(formatDateDisplay(l.date))}, ${escapeHtml(l.time || '')}</strong>
+          <span class="badge" style="background:${isPaid ? '#dcfce7' : '#fee2e2'}; color:${isPaid ? '#15803d' : '#991b1b'};">${paidText}</span>
+        </div>
+        ${l.topic ? `<div class="lesson-history-row"><b>Тема:</b> ${escapeHtml(l.topic)}</div>` : ''}
+        ${l.homework ? `<div class="lesson-history-row"><b>ДЗ:</b> ${escapeHtml(l.homework)}</div>` : ''}
+      `;
+      elements.studentLessonsList.appendChild(item);
+    });
+  }
+
+  elements.studentLessonsModal.classList.remove('hidden');
+}
+
 function setupEventListeners() {
+  // Налаштування
   elements.settingsBtn.onclick = () => elements.settingsModal.classList.remove('hidden');
   elements.closeSettingsModalBtn.onclick = () => elements.settingsModal.classList.add('hidden');
 
@@ -728,7 +843,7 @@ function setupEventListeners() {
 
   elements.modalAddLessonBtn.onclick = () => {
     elements.settingsModal.classList.add('hidden');
-    openAddLessonModalWithTime(formatDateISO(state.currentDate), '18:00');
+    openAddLessonModal();
   };
 
   elements.modalManageStudentsBtn.onclick = () => {
@@ -737,6 +852,14 @@ function setupEventListeners() {
   };
 
   elements.closeStudentsModalBtn.onclick = () => elements.studentsModal.classList.add('hidden');
+  elements.closeStudentLessonsModalBtn.onclick = () => elements.studentLessonsModal.classList.add('hidden');
+
+  elements.lessonPaidSelect.onchange = () => {
+    togglePaymentDetailsVisibility();
+    if (elements.lessonPaidSelect.value === 'true' && !elements.lessonPaidDate.value) {
+      elements.lessonPaidDate.value = elements.lessonDateInput.value || formatDateISO(new Date());
+    }
+  };
 
   elements.addStudentBtn.onclick = async () => {
     const name = elements.newStudentName.value.trim();
@@ -756,27 +879,50 @@ function setupEventListeners() {
     render();
   };
 
-  elements.lessonStatusSelect.onchange = (e) => {
-    toggleModalFieldsByStatus(e.target.value);
-  };
+  function openAddLessonModal() {
+    if (state.students.length === 0) {
+      alert('Спочатку додайте хоча б одного учня!');
+      elements.studentsModal.classList.remove('hidden');
+      return;
+    }
+    state.editingLessonId = null;
+    elements.lessonModalTitle.textContent = 'Додати урок';
+    updateStudentSelectOptions();
+    elements.lessonDateInput.value = formatDateISO(state.currentDate);
+    elements.lessonHourSelect.value = '18';
+    elements.lessonMinuteSelect.value = '00';
+    elements.lessonPaidSelect.value = 'false';
+    elements.lessonStatusSelect.value = 'planned';
+    elements.lessonTopicInput.value = '';
+    elements.lessonHomeworkInput.value = '';
+    elements.lessonPaidAmount.value = DEFAULT_PAID_AMOUNT;
+    elements.lessonPaidDate.value = elements.lessonDateInput.value;
+    elements.lessonPaidMethod.value = DEFAULT_PAID_METHOD;
+    togglePaymentDetailsVisibility();
+    elements.repeatGroup.style.display = 'block';
+    // Додавання уроку відбувається через Налаштування, тому доступне і для минулих дат
+    setLessonFormEditable(true);
+    elements.deleteLessonBtn.style.display = 'none';
+    elements.lessonModal.classList.remove('hidden');
+  }
 
   elements.closeLessonModalBtn.onclick = () => elements.lessonModal.classList.add('hidden');
 
   elements.saveLessonBtn.onclick = async () => {
-    const status = elements.lessonStatusSelect.value;
     const studentId = String(elements.lessonStudentSelect.value);
     const baseDateStr = elements.lessonDateInput.value;
     const hour = elements.lessonHourSelect.value;
     const minute = elements.lessonMinuteSelect.value;
     const paid = elements.lessonPaidSelect.value === 'true';
+    const status = elements.lessonStatusSelect.value;
+    const topic = elements.lessonTopicInput.value.trim();
+    const homework = elements.lessonHomeworkInput.value.trim();
+    const paidAmount = paid ? (parseFloat(elements.lessonPaidAmount.value) || 0) : null;
+    const paidDate = paid ? (elements.lessonPaidDate.value || baseDateStr) : null;
+    const paidMethod = paid ? (elements.lessonPaidMethod.value.trim() || DEFAULT_PAID_METHOD) : null;
 
-    if (!baseDateStr) {
-      alert('Будь ласка, вкажіть дату!');
-      return;
-    }
-
-    if (status === 'busy' && !studentId && state.students.length > 0) {
-      alert('Будь ласка, оберіть учня!');
+    if (!studentId || !baseDateStr) {
+      alert('Заповніть усі поля!');
       return;
     }
 
@@ -785,25 +931,39 @@ function setupEventListeners() {
     if (state.editingLessonId) {
       const lesson = state.lessons.find(l => String(l.id) === String(state.editingLessonId));
       if (lesson) {
-        lesson.studentId = status === 'busy' ? studentId : '';
+        if (isPastDate(lesson.date) && !state.isEditMode) {
+          alert('Зміна розкладу для минулої дати доступна лише через Налаштування.');
+          return;
+        }
+        lesson.studentId = studentId;
         lesson.date = baseDateStr;
         lesson.time = time;
-        lesson.paid = status === 'busy' ? paid : false;
+        lesson.paid = paid;
         lesson.status = status;
+        lesson.topic = topic;
+        lesson.homework = homework;
+        lesson.paidAmount = paidAmount;
+        lesson.paidDate = paidDate;
+        lesson.paidMethod = paidMethod;
       }
     } else {
-      const repeatCount = (status === 'busy') ? (parseInt(elements.lessonRepeatSelect.value, 10) || 1) : 1;
+      const repeatCount = parseInt(elements.lessonRepeatSelect.value, 10) || 1;
       const [y, m, d] = baseDateStr.split('-').map(Number);
 
       for (let i = 0; i < repeatCount; i++) {
         const targetDate = new Date(y, m - 1, d + (i * 7));
         state.lessons.push({
           id: `${Date.now()}_${i}`,
-          studentId: status === 'busy' ? studentId : '',
+          studentId,
           date: formatDateISO(targetDate),
           time,
-          paid: status === 'busy' ? paid : false,
-          status: status
+          paid,
+          status,
+          topic,
+          homework,
+          paidAmount,
+          paidDate,
+          paidMethod
         });
       }
     }
@@ -811,6 +971,28 @@ function setupEventListeners() {
     await saveSchedule();
     elements.lessonModal.classList.add('hidden');
     render();
+  };
+
+  elements.deleteLessonBtn.onclick = async () => {
+    if (!state.editingLessonId) return;
+    const lesson = state.lessons.find(l => String(l.id) === String(state.editingLessonId));
+    if (!lesson) return;
+
+    if (!state.isEditMode) {
+      alert('Видалення уроків доступне лише в режимі редагування (Налаштування).');
+      return;
+    }
+    if (lesson.status !== 'planned') {
+      alert('Видаляти можна лише заплановані уроки.');
+      return;
+    }
+
+    if (confirm('Видалити цей урок?')) {
+      state.lessons = state.lessons.filter(l => String(l.id) !== String(state.editingLessonId));
+      await saveSchedule();
+      elements.lessonModal.classList.add('hidden');
+      render();
+    }
   };
 
   elements.viewDayBtn.onclick = () => { state.view = 'day'; render(); };
