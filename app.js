@@ -18,13 +18,20 @@ const MONTH_NAMES_SHORT = ['січ.', 'лют.', 'берез.', 'квіт.', 'т
 const DAY_NAMES_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
 
 const DEFAULT_PAID_AMOUNT = 175;
-const DEFAULT_PAID_METHOD = 'МоноБанк';
+const PAID_METHODS = ['МоноБанк', 'Готівка', 'ПриватБанк', 'Ощад Банк', 'Mathema'];
+const DEFAULT_PAID_METHOD = PAID_METHODS[0];
+
+// Межі робочого часу
+const MIN_HOUR = 9;           // Найраніша можлива година
+const DEFAULT_OPEN_HOUR = 18; // З цієї години слоти доступні за замовчуванням
+const MAX_HOUR = 21;          // Остання година базової сітки
 
 let state = {
   key: null,
   students: [],
   lessons: [],
-  blockedSlots: [], // { date, time } — слоти, позначені як "недоступно"
+  blockedSlots: [],   // { date, time } — слоти з 18:00+ , явно позначені як "недоступно"
+  availableSlots: [], // { date, time } — слоти з 09:00 до 17:00, явно відкриті як "доступно"
   currentDate: new Date(),
   view: 'day', // За замовчуванням вкладка "День"
   isEditMode: false, // Режим редагування/налаштувань: розширені години, недоступні слоти, видалення уроків, минулі дати
@@ -41,17 +48,37 @@ const elements = {
   viewDayBtn: document.getElementById('view-day-btn'),
   viewWeekBtn: document.getElementById('view-week-btn'),
   viewMonthBtn: document.getElementById('view-month-btn'),
-  
+
   settingsBtn: document.getElementById('settings-btn'),
   settingsModal: document.getElementById('settings-modal'),
   closeSettingsModalBtn: document.getElementById('close-settings-modal-btn'),
   modalAddLessonBtn: document.getElementById('modal-add-lesson-btn'),
   modalManageStudentsBtn: document.getElementById('modal-manage-students-btn'),
+  modalReportsBtn: document.getElementById('modal-reports-btn'),
+  modalStudentLinkBtn: document.getElementById('modal-student-link-btn'),
   editModeCheckbox: document.getElementById('edit-mode-checkbox'),
-  
+
+  studentsInfoBtn: document.getElementById('students-info-btn'),
+  studentsPickerModal: document.getElementById('students-picker-modal'),
+  studentsPickerList: document.getElementById('students-picker-list'),
+  closeStudentsPickerModalBtn: document.getElementById('close-students-picker-modal-btn'),
+
+  studentInfoModal: document.getElementById('student-info-modal'),
+  studentInfoTitle: document.getElementById('student-info-title'),
+  studentInfoFields: document.getElementById('student-info-fields'),
+  studentInfoStats: document.getElementById('student-info-stats'),
+  studentInfoList: document.getElementById('student-info-list'),
+  studentInfoPlannedBtn: document.getElementById('student-info-planned-btn'),
+  studentInfoHistoryBtn: document.getElementById('student-info-history-btn'),
+  closeStudentInfoModalBtn: document.getElementById('close-student-info-modal-btn'),
+
   studentsModal: document.getElementById('students-modal'),
   closeStudentsModalBtn: document.getElementById('close-students-modal-btn'),
   newStudentName: document.getElementById('new-student-name'),
+  newStudentGrade: document.getElementById('new-student-grade'),
+  newStudentPhone: document.getElementById('new-student-phone'),
+  newStudentParentName: document.getElementById('new-student-parent-name'),
+  newStudentParentPhone: document.getElementById('new-student-parent-phone'),
   newStudentSwatches: document.getElementById('new-student-swatches'),
   addStudentBtn: document.getElementById('add-student-btn'),
   studentsList: document.getElementById('students-list'),
@@ -83,7 +110,22 @@ const elements = {
   studentLessonsModal: document.getElementById('student-lessons-modal'),
   studentLessonsTitle: document.getElementById('student-lessons-title'),
   studentLessonsList: document.getElementById('student-lessons-list'),
-  closeStudentLessonsModalBtn: document.getElementById('close-student-lessons-modal-btn')
+  closeStudentLessonsModalBtn: document.getElementById('close-student-lessons-modal-btn'),
+
+  reportsModal: document.getElementById('reports-modal'),
+  closeReportsModalBtn: document.getElementById('close-reports-modal-btn'),
+  reportPeriodSelect: document.getElementById('report-period-select'),
+  reportCustomRange: document.getElementById('report-custom-range'),
+  reportFromDate: document.getElementById('report-from-date'),
+  reportToDate: document.getElementById('report-to-date'),
+  generateReportBtn: document.getElementById('generate-report-btn'),
+  reportOutput: document.getElementById('report-output'),
+  reportIssues: document.getElementById('report-issues'),
+
+  studentLinkModal: document.getElementById('student-link-modal'),
+  studentLinkInput: document.getElementById('student-link-input'),
+  copyStudentLinkBtn: document.getElementById('copy-student-link-btn'),
+  closeStudentLinkModalBtn: document.getElementById('close-student-link-modal-btn')
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -129,10 +171,15 @@ function sanitizeState() {
   if (!Array.isArray(state.students)) state.students = [];
   if (!Array.isArray(state.lessons)) state.lessons = [];
   if (!Array.isArray(state.blockedSlots)) state.blockedSlots = [];
+  if (!Array.isArray(state.availableSlots)) state.availableSlots = [];
 
   state.students.forEach((s, idx) => {
     s.id = s.id ? String(s.id) : String(Date.now() + idx);
     s.name = s.name || `Учень ${idx + 1}`;
+    s.grade = s.grade || '';
+    s.phone = s.phone || '';
+    s.parentName = s.parentName || '';
+    s.parentPhone = s.parentPhone || '';
     if (!PASTEL_COLORS.includes(s.color)) {
       s.color = PASTEL_COLORS[idx % PASTEL_COLORS.length];
     }
@@ -153,6 +200,10 @@ function sanitizeState() {
   state.blockedSlots = state.blockedSlots
     .filter(b => b && b.date && b.time)
     .map(b => ({ date: String(b.date), time: String(b.time) }));
+
+  state.availableSlots = state.availableSlots
+    .filter(b => b && b.date && b.time)
+    .map(b => ({ date: String(b.date), time: String(b.time) }));
 }
 
 async function loadSchedule() {
@@ -165,6 +216,7 @@ async function loadSchedule() {
         state.students = data.data.students || [];
         state.lessons = data.data.lessons || [];
         state.blockedSlots = data.data.blockedSlots || [];
+        state.availableSlots = data.data.availableSlots || [];
         loaded = true;
       }
     } catch (e) {
@@ -180,6 +232,7 @@ async function loadSchedule() {
         state.students = parsed.students || [];
         state.lessons = parsed.lessons || [];
         state.blockedSlots = parsed.blockedSlots || [];
+        state.availableSlots = parsed.availableSlots || [];
       } catch (e) { console.error(e); }
     }
   }
@@ -187,7 +240,12 @@ async function loadSchedule() {
 
 async function saveSchedule() {
   sanitizeState();
-  const payload = { students: state.students, lessons: state.lessons, blockedSlots: state.blockedSlots };
+  const payload = {
+    students: state.students,
+    lessons: state.lessons,
+    blockedSlots: state.blockedSlots,
+    availableSlots: state.availableSlots
+  };
   localStorage.setItem('schedule_' + state.key, JSON.stringify(payload));
 
   if (db && state.key) {
@@ -205,7 +263,6 @@ async function saveSchedule() {
 function render() {
   updateDateDisplay();
   updateViewButtons();
-  renderStudentsList();
   updateStudentSelectOptions();
   renderGrid();
 }
@@ -231,99 +288,38 @@ function updateViewButtons() {
   if (state.view === 'month') elements.viewMonthBtn.classList.add('active');
 }
 
+// Дата між стрілками "ліво"/"право" — розмір збільшено вдвічі відносно базового (1rem -> 2rem)
 function updateDateDisplay() {
+  elements.currentDateDisplay.innerHTML = '';
+
   if (state.view === 'day') {
-    elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' });
+    const text = state.currentDate.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' });
+    const span = document.createElement('span');
+    span.className = 'date-display-big';
+    span.textContent = text;
+    elements.currentDateDisplay.appendChild(span);
   } else if (state.view === 'week') {
     const start = getStartOfWeek(state.currentDate);
     const end = new Date(start);
     end.setDate(start.getDate() + 6);
-    elements.currentDateDisplay.textContent = `${start.getDate()} ${start.toLocaleDateString('uk-UA', {month:'short'})} - ${end.getDate()} ${end.toLocaleDateString('uk-UA', {month:'short'})}`;
+    const text = `${start.getDate()} ${start.toLocaleDateString('uk-UA', { month: 'short' })} - ${end.getDate()} ${end.toLocaleDateString('uk-UA', { month: 'short' })}`;
+    const span = document.createElement('span');
+    span.className = 'date-display-big';
+    span.textContent = text;
+    elements.currentDateDisplay.appendChild(span);
   } else if (state.view === 'month') {
-    elements.currentDateDisplay.textContent = state.currentDate.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
+    // Лише назву місяця збільшено вдвічі, рік — звичайного розміру
+    const monthName = state.currentDate.toLocaleDateString('uk-UA', { month: 'long' });
+    const year = state.currentDate.getFullYear();
+    const monthSpan = document.createElement('span');
+    monthSpan.className = 'date-display-big';
+    monthSpan.textContent = monthName;
+    const yearSpan = document.createElement('span');
+    yearSpan.className = 'date-display-year';
+    yearSpan.textContent = String(year);
+    elements.currentDateDisplay.appendChild(monthSpan);
+    elements.currentDateDisplay.appendChild(yearSpan);
   }
-}
-
-function renderStudentsList() {
-  elements.studentsList.innerHTML = '';
-  if (state.students.length === 0) {
-    const emptyMsg = document.createElement('div');
-    emptyMsg.style.cssText = 'color:#64748b; font-size:0.88rem; text-align:center; padding:12px;';
-    emptyMsg.textContent = 'Список порожній. Додайте учня вище.';
-    elements.studentsList.appendChild(emptyMsg);
-    return;
-  }
-
-  state.students.forEach(student => {
-    const item = document.createElement('div');
-    item.className = 'student-item';
-
-    const headerRow = document.createElement('div');
-    headerRow.className = 'student-item-header';
-
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.value = student.name || '';
-    nameInput.style.cssText = 'flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-weight:600; font-size:0.9rem; color:#1e293b;';
-    nameInput.onchange = async (e) => {
-      const val = e.target.value.trim();
-      if (val) {
-        student.name = val;
-        await saveSchedule();
-        render();
-      }
-    };
-
-    const historyBtn = document.createElement('button');
-    historyBtn.type = 'button';
-    historyBtn.className = 'small-btn';
-    historyBtn.textContent = 'Уроки';
-    historyBtn.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      openStudentLessonsModal(student.id);
-    };
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'danger';
-    deleteBtn.type = 'button';
-    deleteBtn.textContent = 'Видалити';
-    deleteBtn.onclick = async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (confirm(`Видалити учня "${student.name}" та всі його уроки?`)) {
-        const studentIdStr = String(student.id);
-        state.students = state.students.filter(s => String(s.id) !== studentIdStr);
-        state.lessons = state.lessons.filter(l => String(l.studentId) !== studentIdStr);
-        await saveSchedule();
-        render();
-      }
-    };
-
-    headerRow.appendChild(nameInput);
-    headerRow.appendChild(historyBtn);
-    headerRow.appendChild(deleteBtn);
-
-    const swatchesDiv = document.createElement('div');
-    swatchesDiv.className = 'student-color-swatches';
-    
-    PASTEL_COLORS.forEach(color => {
-      const dot = document.createElement('div');
-      dot.className = `swatch-dot ${student.color === color ? 'active' : ''}`;
-      dot.style.backgroundColor = color;
-      dot.onclick = async () => {
-        student.color = color;
-        await saveSchedule();
-        render();
-      };
-      swatchesDiv.appendChild(dot);
-    });
-
-    item.appendChild(headerRow);
-    item.appendChild(swatchesDiv);
-
-    elements.studentsList.appendChild(item);
-  });
 }
 
 function updateStudentSelectOptions() {
@@ -361,16 +357,59 @@ function isPastDate(dateISO) {
   return dateISO < formatDateISO(new Date());
 }
 
-function isSlotBlocked(dateISO, timeStr) {
-  return state.blockedSlots.some(b => b.date === dateISO && b.time === timeStr);
+// Слот вважається минулим, якщо його година вже пройшла (для сьогоднішньої дати) або дата в минулому
+function isPastSlot(dateISO, hour) {
+  const [y, m, d] = String(dateISO).split('-').map(Number);
+  if (!y) return false;
+  const slotDate = new Date(y, m - 1, d, hour, 0, 0, 0);
+  return slotDate.getTime() < Date.now();
 }
 
-async function toggleBlockedSlot(dateISO, timeStr) {
-  const idx = state.blockedSlots.findIndex(b => b.date === dateISO && b.time === timeStr);
-  if (idx >= 0) {
-    state.blockedSlots.splice(idx, 1);
+function hourToTimeStr(h) {
+  return `${String(h).padStart(2, '0')}:00`;
+}
+
+// Статус конкретного часового слоту: 'lesson' | 'available' | 'unavailable'
+function getSlotStatus(dateISO, hour) {
+  const timeStr = hourToTimeStr(hour);
+  const lessons = state.lessons.filter(l => {
+    if (l.date !== dateISO) return false;
+    const lHour = parseInt((l.time || '00:00').split(':')[0], 10);
+    return lHour === hour;
+  });
+
+  if (lessons.length > 0) {
+    return { status: 'lesson', lessons };
+  }
+
+  // Час, що вже минув — автоматично недоступний
+  if (isPastSlot(dateISO, hour)) {
+    return { status: 'unavailable' };
+  }
+
+  if (hour < DEFAULT_OPEN_HOUR) {
+    // За замовчуванням 09:00-17:00 недоступно, доки не відкрито вручну
+    const opened = state.availableSlots.some(s => s.date === dateISO && s.time === timeStr);
+    return { status: opened ? 'available' : 'unavailable' };
   } else {
-    state.blockedSlots.push({ date: dateISO, time: timeStr });
+    // З 18:00 доступно за замовчуванням, доки не заблоковано вручну
+    const closed = state.blockedSlots.some(s => s.date === dateISO && s.time === timeStr);
+    return { status: closed ? 'unavailable' : 'available' };
+  }
+}
+
+// Перемикання доступності конкретної години. Для годин <18 керуємо availableSlots,
+// для годин >=18 керуємо blockedSlots.
+async function toggleSlotAvailability(dateISO, hour) {
+  const timeStr = hourToTimeStr(hour);
+  if (hour < DEFAULT_OPEN_HOUR) {
+    const idx = state.availableSlots.findIndex(s => s.date === dateISO && s.time === timeStr);
+    if (idx >= 0) state.availableSlots.splice(idx, 1);
+    else state.availableSlots.push({ date: dateISO, time: timeStr });
+  } else {
+    const idx = state.blockedSlots.findIndex(s => s.date === dateISO && s.time === timeStr);
+    if (idx >= 0) state.blockedSlots.splice(idx, 1);
+    else state.blockedSlots.push({ date: dateISO, time: timeStr });
   }
   await saveSchedule();
 }
@@ -392,7 +431,7 @@ function createDayHeaderElement(date) {
   const dayIdx = (date.getDay() + 6) % 7;
   const header = document.createElement('div');
   header.className = `day-header ${isToday(date) ? 'today' : ''}`;
-  
+
   const nameSpan = document.createElement('span');
   nameSpan.className = 'day-header-name';
   nameSpan.textContent = DAY_NAMES_SHORT[dayIdx];
@@ -414,170 +453,187 @@ function renderGrid() {
     return;
   }
 
-  const isMobile = window.innerWidth <= 640;
-
-  if (state.view === 'week' && isMobile) {
-    renderWeekViewMobile();
+  if (state.view === 'week') {
+    renderWeekOrDayColumns(getWeekDates(state.currentDate), { merge: !state.isEditMode, showUnavailable: state.isEditMode });
     return;
   }
 
-  const isWeek = state.view === 'week';
-  elements.calendarGrid.className = `calendar-grid ${isWeek ? 'grid-week-desktop' : 'grid-day'}`;
-
-  const daysCount = isWeek ? 7 : 1;
-  const startOfWeek = getStartOfWeek(state.currentDate);
-  const daysDates = [];
-
-  for (let i = 0; i < daysCount; i++) {
-    const date = isWeek ? new Date(startOfWeek) : new Date(state.currentDate);
-    if (isWeek) date.setDate(startOfWeek.getDate() + i);
-    daysDates.push(date);
-
-    const header = createDayHeaderElement(date);
-    elements.calendarGrid.appendChild(header);
-  }
-
-  renderTimeSlotsForDays(elements.calendarGrid, daysDates);
+  // День: лише доступні години і уроки, одна година — один слот (без об'єднання діапазонів)
+  renderWeekOrDayColumns([new Date(state.currentDate)], { merge: false, showUnavailable: state.isEditMode });
 }
 
-// Повідомлення для тижневого режиму на мобільних пристроях (блок по 2 дні)
-function renderWeekViewMobile() {
-  elements.calendarGrid.className = 'calendar-grid';
-
-  const startOfWeek = getStartOfWeek(state.currentDate);
-  const daysDates = [];
+function getWeekDates(anchorDate) {
+  const startOfWeek = getStartOfWeek(anchorDate);
+  const dates = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(startOfWeek);
     d.setDate(startOfWeek.getDate() + i);
-    daysDates.push(d);
+    dates.push(d);
   }
-
-  // Групуємо дні по 2 (Пн-Вт, Ср-Чт, Пт-Сб, Нд)
-  const dayChunks = [];
-  for (let i = 0; i < daysDates.length; i += 2) {
-    dayChunks.push(daysDates.slice(i, i + 2));
-  }
-
-  dayChunks.forEach(chunk => {
-    const block = document.createElement('div');
-    block.className = `calendar-grid grid-week-mobile-block ${chunk.length === 1 ? 'single-day' : ''}`;
-
-    chunk.forEach(date => {
-      const header = createDayHeaderElement(date);
-      block.appendChild(header);
-    });
-
-    renderTimeSlotsForDays(block, chunk);
-    elements.calendarGrid.appendChild(block);
-  });
+  return dates;
 }
 
-function renderTimeSlotsForDays(container, daysDates) {
-  const baseStart = state.isEditMode ? 9 : 17;
-  const baseEnd = 21;
+// Список годин для сітки: базовий діапазон 9-21 + будь-які години, на які вже заплановано урок
+function getRelevantHours(dateISO) {
+  const hours = [];
+  for (let h = MIN_HOUR; h <= MAX_HOUR; h++) hours.push(h);
+  state.lessons.forEach(l => {
+    if (l.date === dateISO) {
+      const lh = parseInt((l.time || '00:00').split(':')[0], 10);
+      if (!isNaN(lh) && !hours.includes(lh)) hours.push(lh);
+    }
+  });
+  hours.sort((a, b) => a - b);
+  return hours;
+}
 
-  const hoursSet = new Set();
-  for (let h = baseStart; h <= baseEnd; h++) {
-    hoursSet.add(h);
+// Формує впорядкований список записів для одного дня: уроки, вільні години (окремо або
+// об'єднані в діапазон до 18:00), і, за потреби, недоступні години (для редагування).
+function buildDayEntries(dateISO, options) {
+  const merge = !!options.merge;
+  const showUnavailable = !!options.showUnavailable;
+  const hours = getRelevantHours(dateISO);
+
+  const entries = [];
+  let run = [];
+
+  function flushRun() {
+    if (run.length === 0) return;
+    if (run.length === 1) {
+      entries.push({ type: 'hour', hour: run[0], status: 'available' });
+    } else {
+      entries.push({ type: 'range', start: run[0], end: run[run.length - 1] + 1 });
+    }
+    run = [];
   }
+
+  hours.forEach(h => {
+    const info = getSlotStatus(dateISO, h);
+
+    if (info.status === 'lesson') {
+      flushRun();
+      entries.push({ type: 'lesson', hour: h, lessons: info.lessons });
+      return;
+    }
+
+    if (info.status === 'available') {
+      if (merge && h < DEFAULT_OPEN_HOUR) {
+        if (run.length && run[run.length - 1] !== h - 1) flushRun();
+        run.push(h);
+      } else {
+        flushRun();
+        entries.push({ type: 'hour', hour: h, status: 'available' });
+      }
+      return;
+    }
+
+    // unavailable
+    flushRun();
+    if (showUnavailable) {
+      entries.push({ type: 'hour', hour: h, status: 'unavailable' });
+    }
+    // інакше пропускаємо — без порожніх полів
+  });
+
+  flushRun();
+  return entries;
+}
+
+function renderWeekOrDayColumns(daysDates, options) {
+  const isWeek = daysDates.length > 1;
+  const isMobile = window.innerWidth <= 640;
+
+  elements.calendarGrid.className = '';
+  const columnsWrap = document.createElement('div');
+  columnsWrap.className = `week-columns ${isWeek && isMobile ? 'mobile-stack' : ''}`;
 
   daysDates.forEach(date => {
     const dateISO = formatDateISO(date);
-    state.lessons.forEach(l => {
-      if (l.date === dateISO) {
-        const lHour = parseInt((l.time || '00:00').split(':')[0], 10);
-        if (!isNaN(lHour)) {
-          hoursSet.add(lHour);
-        }
-      }
-    });
-    state.blockedSlots.forEach(b => {
-      if (b.date === dateISO) {
-        const bHour = parseInt((b.time || '00:00').split(':')[0], 10);
-        if (!isNaN(bHour)) {
-          hoursSet.add(bHour);
-        }
-      }
-    });
-  });
+    const pastDate = isPastDate(dateISO);
 
-  const sortedHours = Array.from(hoursSet).sort((a, b) => a - b);
-  // Слоти "недоступно" показуємо лише у режимі "День" або в режимі редагування
-  const showUnavailableSlots = state.view === 'day' || state.isEditMode;
+    const column = document.createElement('div');
+    column.className = 'day-column';
+    column.appendChild(createDayHeaderElement(date));
 
-  sortedHours.forEach(h => {
-    const timeStr = `${String(h).padStart(2, '0')}:00`;
-    const isBaseFreeHour = h >= baseStart && h <= baseEnd;
+    const entries = buildDayEntries(dateISO, options);
 
-    daysDates.forEach(date => {
-      const dateISO = formatDateISO(date);
-      const pastDate = isPastDate(dateISO);
-      const slot = document.createElement('div');
-      slot.className = 'time-slot';
+    if (entries.length === 0) {
+      const emptyMsg = document.createElement('div');
+      emptyMsg.style.cssText = 'color:#94a3b8; font-size:0.78rem; text-align:center; padding:8px;';
+      emptyMsg.textContent = 'Немає вільних годин';
+      column.appendChild(emptyMsg);
+    }
 
-      const slotLessons = state.lessons.filter(l => {
-        if (l.date !== dateISO) return false;
-        const lHour = parseInt((l.time || '00:00').split(':')[0], 10);
-        return lHour === h;
-      });
-
-      if (slotLessons.length > 0) {
-        slotLessons.forEach(lesson => {
-          const card = createLessonCard(lesson, pastDate);
-          slot.appendChild(card);
+    entries.forEach(entry => {
+      if (entry.type === 'lesson') {
+        entry.lessons.forEach(lesson => {
+          column.appendChild(createLessonCard(lesson, pastDate));
         });
-      } else if (isSlotBlocked(dateISO, timeStr)) {
-        if (showUnavailableSlots) {
-          const unavailableSlot = document.createElement('div');
-          unavailableSlot.className = 'slot-unavailable';
-          unavailableSlot.textContent = `${timeStr} Недоступно`;
-          if (state.isEditMode) {
-            unavailableSlot.style.cursor = 'pointer';
-            unavailableSlot.title = "Натисніть, щоб зробити слот доступним";
-            unavailableSlot.onclick = async () => {
-              await toggleBlockedSlot(dateISO, timeStr);
-              render();
-            };
-          }
-          slot.appendChild(unavailableSlot);
-        } else {
-          // Приховано в режимах "Тиждень"/"Місяць" — лише порожній заповнювач для вирівнювання сітки
-          const blank = document.createElement('div');
-          blank.className = 'slot-free out-of-range';
-          slot.appendChild(blank);
-        }
+        return;
+      }
+
+      if (entry.type === 'range') {
+        const startStr = hourToTimeStr(entry.start);
+        const endStr = hourToTimeStr(entry.end);
+        const el = document.createElement('div');
+        el.className = 'slot-free slot-range';
+        el.textContent = `${startStr}–${endStr} Вільно`;
+        attachFreeSlotHandlers(el, dateISO, entry.start, pastDate);
+        column.appendChild(el);
+        return;
+      }
+
+      // type === 'hour'
+      const timeStr = hourToTimeStr(entry.hour);
+      if (entry.status === 'available') {
+        const el = document.createElement('div');
+        el.className = 'slot-free';
+        el.textContent = `${timeStr} Вільно`;
+        attachFreeSlotHandlers(el, dateISO, entry.hour, pastDate);
+        column.appendChild(el);
       } else {
-        const freeSlot = document.createElement('div');
-        freeSlot.className = `slot-free ${!isBaseFreeHour ? 'out-of-range' : ''}`;
-        freeSlot.textContent = isBaseFreeHour ? `${timeStr} Вільно` : '';
-
-        const canInteract = isBaseFreeHour && (!pastDate || state.isEditMode);
-        if (canInteract) {
-          if (state.isEditMode) {
-            freeSlot.style.cursor = 'pointer';
-            freeSlot.title = "Натисніть, щоб позначити слот недоступним";
-            freeSlot.onclick = async () => {
-              await toggleBlockedSlot(dateISO, timeStr);
-              render();
-            };
-          }
-
-          freeSlot.ondragover = (e) => { e.preventDefault(); freeSlot.classList.add('drag-over'); };
-          freeSlot.ondragleave = () => freeSlot.classList.remove('drag-over');
-          freeSlot.ondrop = async (e) => {
-            e.preventDefault();
-            freeSlot.classList.remove('drag-over');
-            const lessonId = e.dataTransfer.getData('text/plain');
-            await moveLesson(lessonId, dateISO, timeStr);
+        const el = document.createElement('div');
+        el.className = 'slot-unavailable';
+        el.textContent = `${timeStr} Недоступно`;
+        if (state.isEditMode) {
+          el.style.cursor = 'pointer';
+          el.title = 'Натисніть, щоб зробити слот доступним';
+          el.onclick = async () => {
+            await toggleSlotAvailability(dateISO, entry.hour);
+            render();
           };
         }
-
-        slot.appendChild(freeSlot);
+        column.appendChild(el);
       }
-
-      container.appendChild(slot);
     });
+
+    columnsWrap.appendChild(column);
   });
+
+  elements.calendarGrid.appendChild(columnsWrap);
+}
+
+function attachFreeSlotHandlers(el, dateISO, hour, pastDate) {
+  const canInteract = !pastDate || state.isEditMode;
+  if (!canInteract) return;
+
+  if (state.isEditMode) {
+    el.style.cursor = 'pointer';
+    el.title = 'Натисніть, щоб позначити слот недоступним';
+    el.onclick = async () => {
+      await toggleSlotAvailability(dateISO, hour);
+      render();
+    };
+  }
+
+  el.ondragover = (e) => { e.preventDefault(); el.classList.add('drag-over'); };
+  el.ondragleave = () => el.classList.remove('drag-over');
+  el.ondrop = async (e) => {
+    e.preventDefault();
+    el.classList.remove('drag-over');
+    const lessonId = e.dataTransfer.getData('text/plain');
+    await moveLesson(lessonId, dateISO, hourToTimeStr(hour));
+  };
 }
 
 function createLessonCard(lesson, pastDate) {
@@ -662,7 +718,6 @@ function renderMonthView() {
     const cell = document.createElement('div');
     cell.className = `month-cell ${isCurrentToday ? 'today' : ''}`;
 
-    // Дати в Місяці — ВІДЦЕНТРОВАНІ та ЖИРНІ
     const numDiv = document.createElement('div');
     numDiv.className = `month-day-num ${isCurrentToday ? 'today-num' : ''}`;
     numDiv.textContent = day;
@@ -753,6 +808,19 @@ function setLessonFormEditable(editable) {
   elements.lessonPastNotice.style.display = editable ? 'none' : 'block';
 }
 
+// Гарантує, що обране значення способу оплати присутнє у списку select (навіть якщо це
+// старе довільне значення, збережене до переходу на фіксований список).
+function ensurePaidMethodOption(value) {
+  if (!value) return;
+  const exists = Array.from(elements.lessonPaidMethod.options).some(o => o.value === value);
+  if (!exists) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    elements.lessonPaidMethod.appendChild(opt);
+  }
+}
+
 function openEditLessonModal(lessonId) {
   const lesson = state.lessons.find(l => String(l.id) === String(lessonId));
   if (!lesson) return;
@@ -773,6 +841,7 @@ function openEditLessonModal(lessonId) {
   elements.lessonHomeworkInput.value = lesson.homework || '';
   elements.lessonPaidAmount.value = lesson.paidAmount != null ? lesson.paidAmount : DEFAULT_PAID_AMOUNT;
   elements.lessonPaidDate.value = lesson.paidDate || lesson.date;
+  ensurePaidMethodOption(lesson.paidMethod);
   elements.lessonPaidMethod.value = lesson.paidMethod || DEFAULT_PAID_METHOD;
   togglePaymentDetailsVisibility();
 
@@ -789,46 +858,375 @@ function openEditLessonModal(lessonId) {
   elements.lessonModal.classList.remove('hidden');
 }
 
-function openStudentLessonsModal(studentId) {
+// ===================== УЧНІ: управління (адмін) =====================
+
+function renderStudentsList() {
+  elements.studentsList.innerHTML = '';
+  if (state.students.length === 0) {
+    const emptyMsg = document.createElement('div');
+    emptyMsg.style.cssText = 'color:#64748b; font-size:0.88rem; text-align:center; padding:12px;';
+    emptyMsg.textContent = 'Список порожній. Додайте учня вище.';
+    elements.studentsList.appendChild(emptyMsg);
+    return;
+  }
+
+  state.students.forEach(student => {
+    const item = document.createElement('div');
+    item.className = 'student-item';
+
+    const headerRow = document.createElement('div');
+    headerRow.className = 'student-item-header';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = student.name || '';
+    nameInput.style.cssText = 'flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-weight:600; font-size:0.9rem; color:#1e293b; min-width:120px;';
+    nameInput.onchange = async (e) => {
+      const val = e.target.value.trim();
+      if (val) {
+        student.name = val;
+        await saveSchedule();
+        render();
+      }
+    };
+
+    const historyBtn = document.createElement('button');
+    historyBtn.type = 'button';
+    historyBtn.className = 'small-btn';
+    historyBtn.textContent = 'Уроки';
+    historyBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openStudentInfoModal(student.id);
+    };
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'danger';
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Видалити';
+    deleteBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (confirm(`Видалити учня "${student.name}" та всі його уроки?`)) {
+        const studentIdStr = String(student.id);
+        state.students = state.students.filter(s => String(s.id) !== studentIdStr);
+        state.lessons = state.lessons.filter(l => String(l.studentId) !== studentIdStr);
+        await saveSchedule();
+        render();
+        renderStudentsList();
+      }
+    };
+
+    headerRow.appendChild(nameInput);
+    headerRow.appendChild(historyBtn);
+    headerRow.appendChild(deleteBtn);
+
+    const extraFields = document.createElement('div');
+    extraFields.className = 'student-extra-fields';
+
+    const makeExtraInput = (placeholder, value, onSave) => {
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.placeholder = placeholder;
+      inp.value = value || '';
+      inp.onchange = async (e) => {
+        onSave(e.target.value.trim());
+        await saveSchedule();
+      };
+      return inp;
+    };
+
+    extraFields.appendChild(makeExtraInput('Клас', student.grade, (v) => { student.grade = v; }));
+    extraFields.appendChild(makeExtraInput('Контактний телефон', student.phone, (v) => { student.phone = v; }));
+    extraFields.appendChild(makeExtraInput("Ім'я батьків", student.parentName, (v) => { student.parentName = v; }));
+    extraFields.appendChild(makeExtraInput('Телефон батьків', student.parentPhone, (v) => { student.parentPhone = v; }));
+
+    const swatchesDiv = document.createElement('div');
+    swatchesDiv.className = 'student-color-swatches';
+
+    PASTEL_COLORS.forEach(color => {
+      const dot = document.createElement('div');
+      dot.className = `swatch-dot ${student.color === color ? 'active' : ''}`;
+      dot.style.backgroundColor = color;
+      dot.onclick = async () => {
+        student.color = color;
+        await saveSchedule();
+        render();
+        renderStudentsList();
+      };
+      swatchesDiv.appendChild(dot);
+    });
+
+    item.appendChild(headerRow);
+    item.appendChild(extraFields);
+    item.appendChild(swatchesDiv);
+
+    elements.studentsList.appendChild(item);
+  });
+}
+
+// ===================== УЧНІ: перегляд інформації (кнопка "Учні" на головній) =====================
+
+function renderStudentsPickerList() {
+  elements.studentsPickerList.innerHTML = '';
+  if (state.students.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'color:#64748b; font-size:0.88rem; text-align:center; padding:16px;';
+    empty.textContent = 'Список учнів порожній.';
+    elements.studentsPickerList.appendChild(empty);
+    return;
+  }
+
+  state.students.forEach(student => {
+    const item = document.createElement('div');
+    item.className = 'clickable-list-item';
+    item.style.backgroundColor = student.color || '#f8fafc';
+    item.innerHTML = `<span>${escapeHtml(student.name)}</span><span style="font-weight:500; font-size:0.8rem; color:#475569;">${escapeHtml(student.grade || '')}</span>`;
+    item.onclick = () => {
+      elements.studentsPickerModal.classList.add('hidden');
+      openStudentInfoModal(student.id);
+    };
+    elements.studentsPickerList.appendChild(item);
+  });
+}
+
+function getStudentLessonStats(studentId) {
+  const idStr = String(studentId);
+  const lessons = state.lessons.filter(l => String(l.studentId) === idStr);
+  const completed = lessons.filter(l => l.status === 'completed');
+  const planned = lessons.filter(l => l.status === 'planned');
+  const completedUnpaid = completed.filter(l => !l.paid).length;
+  const paidNotCompleted = lessons.filter(l => l.paid && l.status !== 'completed').length;
+  return {
+    lessons, completed, planned,
+    completedCount: completed.length,
+    plannedCount: planned.length,
+    completedUnpaid,
+    paidNotCompleted
+  };
+}
+
+function openStudentInfoModal(studentId) {
   const student = state.students.find(s => String(s.id) === String(studentId));
   if (!student) return;
 
-  elements.studentLessonsTitle.textContent = `Уроки: ${student.name}`;
+  state.currentInfoStudentId = String(studentId);
+  elements.studentInfoTitle.textContent = student.name;
 
-  const lessons = state.lessons
-    .filter(l => String(l.studentId) === String(studentId) && l.status === 'completed')
-    .sort((a, b) => `${b.date} ${b.time || ''}`.localeCompare(`${a.date} ${a.time || ''}`));
+  elements.studentInfoFields.innerHTML = `
+    <div class="info-row"><span>Клас</span><span>${escapeHtml(student.grade) || '—'}</span></div>
+    <div class="info-row"><span>Контактний телефон</span><span>${escapeHtml(student.phone) || '—'}</span></div>
+    <div class="info-row"><span>Ім'я батьків</span><span>${escapeHtml(student.parentName) || '—'}</span></div>
+    <div class="info-row"><span>Телефон батьків</span><span>${escapeHtml(student.parentPhone) || '—'}</span></div>
+  `;
 
-  elements.studentLessonsList.innerHTML = '';
+  const stats = getStudentLessonStats(studentId);
+  elements.studentInfoStats.innerHTML = `
+    <div class="stat-card"><b>${stats.completedCount}</b><span>Проведено уроків</span></div>
+    <div class="stat-card"><b>${stats.completedUnpaid}</b><span>Проведено, не оплачено</span></div>
+    <div class="stat-card"><b>${stats.paidNotCompleted}</b><span>Оплачено, не проведено</span></div>
+  `;
 
+  renderStudentCompletedLessons(studentId);
+
+  elements.studentInfoModal.classList.remove('hidden');
+}
+
+function renderStudentCompletedLessons(studentId) {
+  const stats = getStudentLessonStats(studentId);
+  const lessons = stats.completed.slice().sort((a, b) => `${b.date} ${b.time || ''}`.localeCompare(`${a.date} ${a.time || ''}`));
+
+  elements.studentInfoList.innerHTML = '';
   if (lessons.length === 0) {
     const empty = document.createElement('div');
     empty.style.cssText = 'color:#64748b; font-size:0.88rem; text-align:center; padding:16px;';
     empty.textContent = 'Ще немає проведених уроків.';
-    elements.studentLessonsList.appendChild(empty);
-  } else {
-    lessons.forEach(l => {
-      const isPaid = l.paid === true || l.paid === 'true';
-      const item = document.createElement('div');
-      item.className = 'lesson-history-item';
-
-      const paidText = isPaid
-        ? `Оплачено${l.paidAmount != null ? ` · ${l.paidAmount} грн` : ''}${l.paidMethod ? ` · ${escapeHtml(l.paidMethod)}` : ''}`
-        : 'Не оплачено';
-
-      item.innerHTML = `
-        <div class="lesson-history-header">
-          <strong>${escapeHtml(formatDateDisplay(l.date))}, ${escapeHtml(l.time || '')}</strong>
-          <span class="badge" style="background:${isPaid ? '#dcfce7' : '#fee2e2'}; color:${isPaid ? '#15803d' : '#991b1b'};">${paidText}</span>
-        </div>
-        ${l.topic ? `<div class="lesson-history-row"><b>Тема:</b> ${escapeHtml(l.topic)}</div>` : ''}
-        ${l.homework ? `<div class="lesson-history-row"><b>ДЗ:</b> ${escapeHtml(l.homework)}</div>` : ''}
-      `;
-      elements.studentLessonsList.appendChild(item);
-    });
+    elements.studentInfoList.appendChild(empty);
+    return;
   }
 
-  elements.studentLessonsModal.classList.remove('hidden');
+  lessons.forEach(l => {
+    const isPaid = l.paid === true || l.paid === 'true';
+    const item = document.createElement('div');
+    item.className = 'lesson-history-item';
+    const paidText = isPaid
+      ? `Оплачено${l.paidAmount != null ? ` · ${l.paidAmount} грн` : ''}${l.paidMethod ? ` · ${escapeHtml(l.paidMethod)}` : ''}`
+      : 'Не оплачено';
+
+    item.innerHTML = `
+      <div class="lesson-history-header">
+        <strong>${escapeHtml(formatDateDisplay(l.date))}, ${escapeHtml(l.time || '')}</strong>
+        <span class="badge" style="background:${isPaid ? '#dcfce7' : '#fee2e2'}; color:${isPaid ? '#15803d' : '#991b1b'};">${paidText}</span>
+      </div>
+      ${l.topic ? `<div class="lesson-history-row"><b>Тема:</b> ${escapeHtml(l.topic)}</div>` : ''}
+      ${l.homework ? `<div class="lesson-history-row"><b>ДЗ:</b> ${escapeHtml(l.homework)}</div>` : ''}
+    `;
+    elements.studentInfoList.appendChild(item);
+  });
+}
+
+function renderStudentPlannedLessons(studentId) {
+  const stats = getStudentLessonStats(studentId);
+  const lessons = stats.planned.slice().sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`));
+
+  elements.studentInfoList.innerHTML = '';
+  if (lessons.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'color:#64748b; font-size:0.88rem; text-align:center; padding:16px;';
+    empty.textContent = 'Немає запланованих уроків.';
+    elements.studentInfoList.appendChild(empty);
+    return;
+  }
+
+  lessons.forEach(l => {
+    const item = document.createElement('div');
+    item.className = 'lesson-history-item';
+    item.innerHTML = `
+      <div class="lesson-history-header">
+        <strong>${escapeHtml(formatDateDisplay(l.date))}, ${escapeHtml(l.time || '')}</strong>
+      </div>
+      ${l.topic ? `<div class="lesson-history-row"><b>Тема:</b> ${escapeHtml(l.topic)}</div>` : ''}
+    `;
+    elements.studentInfoList.appendChild(item);
+  });
+}
+
+// Лишено для сумісності - тепер відкриває оновлену модалку інформації про учня
+function openStudentLessonsModal(studentId) {
+  openStudentInfoModal(studentId);
+}
+
+// ===================== ЗВІТИ ТА ПЕРЕВІРКА ПОМИЛОК =====================
+
+function getReportRange() {
+  const period = elements.reportPeriodSelect.value;
+  const today = new Date();
+
+  if (period === 'week') {
+    const start = getStartOfWeek(today);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return { from: formatDateISO(start), to: formatDateISO(end) };
+  }
+  if (period === 'month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    return { from: formatDateISO(start), to: formatDateISO(end) };
+  }
+  // custom
+  return {
+    from: elements.reportFromDate.value || formatDateISO(today),
+    to: elements.reportToDate.value || formatDateISO(today)
+  };
+}
+
+function generateReport() {
+  const { from, to } = getReportRange();
+  const lessonsInRange = state.lessons.filter(l => l.date >= from && l.date <= to);
+
+  const totalLessons = lessonsInRange.length;
+  const completedLessons = lessonsInRange.filter(l => l.status === 'completed').length;
+  const totalPaid = lessonsInRange.reduce((sum, l) => sum + (l.paid ? Number(l.paidAmount || 0) : 0), 0);
+
+  const perStudentMap = new Map();
+  lessonsInRange.forEach(l => {
+    const student = state.students.find(s => String(s.id) === String(l.studentId));
+    const name = student ? student.name : 'Невідомий учень';
+    if (!perStudentMap.has(name)) {
+      perStudentMap.set(name, { name, lessonsCount: 0, completedCount: 0, paidSum: 0, unpaidCount: 0 });
+    }
+    const rec = perStudentMap.get(name);
+    rec.lessonsCount += 1;
+    if (l.status === 'completed') rec.completedCount += 1;
+    if (l.paid) rec.paidSum += Number(l.paidAmount || 0);
+    else rec.unpaidCount += 1;
+  });
+
+  const rows = Array.from(perStudentMap.values()).sort((a, b) => b.lessonsCount - a.lessonsCount);
+
+  let tableRows = rows.map(r => `
+    <tr>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${r.lessonsCount}</td>
+      <td>${r.completedCount}</td>
+      <td>${r.unpaidCount}</td>
+      <td>${r.paidSum} грн</td>
+    </tr>
+  `).join('');
+
+  if (!tableRows) {
+    tableRows = `<tr><td colspan="5" style="text-align:center; color:#64748b;">Немає даних за обраний період</td></tr>`;
+  }
+
+  elements.reportOutput.innerHTML = `
+    <div style="font-size:0.85rem; color:#475569; margin-bottom:8px;">Період: ${escapeHtml(formatDateDisplay(from))} — ${escapeHtml(formatDateDisplay(to))}</div>
+    <div class="stat-cards">
+      <div class="stat-card"><b>${totalLessons}</b><span>Уроків всього</span></div>
+      <div class="stat-card"><b>${completedLessons}</b><span>Проведено</span></div>
+      <div class="stat-card"><b>${totalPaid} грн</b><span>Отримано оплат</span></div>
+    </div>
+    <table class="report-table">
+      <thead><tr><th>Учень</th><th>Уроків</th><th>Проведено</th><th>Не оплачено</th><th>Сума оплат</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  `;
+
+  renderReportIssues();
+}
+
+function renderReportIssues() {
+  const issues = [];
+
+  state.lessons.forEach(l => {
+    const student = state.students.find(s => String(s.id) === String(l.studentId));
+    const label = `${formatDateDisplay(l.date)}, ${l.time || ''}${student ? ' — ' + student.name : ''}`;
+
+    if (!student) {
+      issues.push(`Урок (${label}): учня не знайдено (можливо, видалений).`);
+    }
+    if (isPastDate(l.date) && l.status === 'planned') {
+      issues.push(`Урок (${label}): дата вже минула, але урок не позначено як "Відбувся".`);
+    }
+    if (l.status === 'completed' && !l.topic) {
+      issues.push(`Урок (${label}): не вказано тему уроку.`);
+    }
+  });
+
+  state.students.forEach(s => {
+    const missing = [];
+    if (!s.grade) missing.push('клас');
+    if (!s.phone) missing.push('телефон учня');
+    if (!s.parentName) missing.push("ім'я батьків");
+    if (!s.parentPhone) missing.push('телефон батьків');
+    if (missing.length > 0) {
+      issues.push(`Учень "${s.name}": не заповнено — ${missing.join(', ')}.`);
+    }
+  });
+
+  elements.reportIssues.innerHTML = '';
+  if (issues.length === 0) {
+    const ok = document.createElement('div');
+    ok.className = 'issue-item ok';
+    ok.textContent = '✓ Помилок та незаповнених полів не знайдено.';
+    elements.reportIssues.appendChild(ok);
+    return;
+  }
+
+  issues.forEach(msg => {
+    const el = document.createElement('div');
+    el.className = 'issue-item';
+    el.textContent = msg;
+    elements.reportIssues.appendChild(el);
+  });
+}
+
+// ===================== ПОСИЛАННЯ ДЛЯ УЧНІВ =====================
+
+function buildStudentScheduleLink() {
+  const base = window.location.href.replace(/[^/]*$/, '') + 'student-schedule.html';
+  const url = new URL(base, window.location.href);
+  url.searchParams.set('key', state.key);
+  return url.toString();
 }
 
 function setupEventListeners() {
@@ -848,8 +1246,53 @@ function setupEventListeners() {
 
   elements.modalManageStudentsBtn.onclick = () => {
     elements.settingsModal.classList.add('hidden');
+    renderStudentsList();
     elements.studentsModal.classList.remove('hidden');
   };
+
+  elements.modalReportsBtn.onclick = () => {
+    elements.settingsModal.classList.add('hidden');
+    elements.reportOutput.innerHTML = '';
+    renderReportIssues();
+    elements.reportsModal.classList.remove('hidden');
+  };
+
+  elements.modalStudentLinkBtn.onclick = () => {
+    elements.settingsModal.classList.add('hidden');
+    elements.studentLinkInput.value = buildStudentScheduleLink();
+    elements.studentLinkModal.classList.remove('hidden');
+  };
+
+  elements.copyStudentLinkBtn.onclick = () => {
+    elements.studentLinkInput.select();
+    try {
+      navigator.clipboard.writeText(elements.studentLinkInput.value);
+    } catch (e) {
+      document.execCommand('copy');
+    }
+  };
+  elements.closeStudentLinkModalBtn.onclick = () => elements.studentLinkModal.classList.add('hidden');
+
+  // Учні (перегляд з головної сторінки)
+  elements.studentsInfoBtn.onclick = () => {
+    renderStudentsPickerList();
+    elements.studentsPickerModal.classList.remove('hidden');
+  };
+  elements.closeStudentsPickerModalBtn.onclick = () => elements.studentsPickerModal.classList.add('hidden');
+  elements.closeStudentInfoModalBtn.onclick = () => elements.studentInfoModal.classList.add('hidden');
+  elements.studentInfoHistoryBtn.onclick = () => {
+    if (state.currentInfoStudentId) renderStudentCompletedLessons(state.currentInfoStudentId);
+  };
+  elements.studentInfoPlannedBtn.onclick = () => {
+    if (state.currentInfoStudentId) renderStudentPlannedLessons(state.currentInfoStudentId);
+  };
+
+  // Звіти
+  elements.reportPeriodSelect.onchange = () => {
+    elements.reportCustomRange.style.display = elements.reportPeriodSelect.value === 'custom' ? 'flex' : 'none';
+  };
+  elements.generateReportBtn.onclick = () => generateReport();
+  elements.closeReportsModalBtn.onclick = () => elements.reportsModal.classList.add('hidden');
 
   elements.closeStudentsModalBtn.onclick = () => elements.studentsModal.classList.add('hidden');
   elements.closeStudentLessonsModalBtn.onclick = () => elements.studentLessonsModal.classList.add('hidden');
@@ -871,17 +1314,27 @@ function setupEventListeners() {
     state.students.push({
       id: Date.now().toString(),
       name,
+      grade: elements.newStudentGrade.value.trim(),
+      phone: elements.newStudentPhone.value.trim(),
+      parentName: elements.newStudentParentName.value.trim(),
+      parentPhone: elements.newStudentParentPhone.value.trim(),
       color: state.selectedNewStudentColor
     });
 
     elements.newStudentName.value = '';
+    elements.newStudentGrade.value = '';
+    elements.newStudentPhone.value = '';
+    elements.newStudentParentName.value = '';
+    elements.newStudentParentPhone.value = '';
     await saveSchedule();
     render();
+    renderStudentsList();
   };
 
   function openAddLessonModal() {
     if (state.students.length === 0) {
       alert('Спочатку додайте хоча б одного учня!');
+      renderStudentsList();
       elements.studentsModal.classList.remove('hidden');
       return;
     }
@@ -919,7 +1372,7 @@ function setupEventListeners() {
     const homework = elements.lessonHomeworkInput.value.trim();
     const paidAmount = paid ? (parseFloat(elements.lessonPaidAmount.value) || 0) : null;
     const paidDate = paid ? (elements.lessonPaidDate.value || baseDateStr) : null;
-    const paidMethod = paid ? (elements.lessonPaidMethod.value.trim() || DEFAULT_PAID_METHOD) : null;
+    const paidMethod = paid ? (elements.lessonPaidMethod.value || DEFAULT_PAID_METHOD) : null;
 
     if (!studentId || !baseDateStr) {
       alert('Заповніть усі поля!');
@@ -1000,7 +1453,7 @@ function setupEventListeners() {
   elements.viewMonthBtn.onclick = () => { state.view = 'month'; render(); };
 
   elements.todayBtn.onclick = () => { state.currentDate = new Date(); render(); };
-  
+
   elements.prevBtn.onclick = () => {
     if (state.view === 'day') {
       state.currentDate.setDate(state.currentDate.getDate() - 1);
