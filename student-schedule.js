@@ -215,28 +215,7 @@ function setupPublicListeners() {
     renderPublicWeek();
   };
   window.addEventListener('resize', renderPublicWeek);
-  setupSwipeNavigation();
-}
-
-function setupSwipeNavigation() {
-  let touchStartX = 0, touchStartY = 0, touchActive = false;
-  els.container.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    touchActive = true;
-  }, { passive: true });
-  els.container.addEventListener('touchend', (e) => {
-    if (!touchActive) return;
-    touchActive = false;
-    const touch = e.changedTouches[0];
-    const dx = touch.clientX - touchStartX;
-    const dy = touch.clientY - touchStartY;
-    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      if (dx < 0) els.nextBtn.click();
-      else els.prevBtn.click();
-    }
-  }, { passive: true });
+  // Свайп-навігація вимкнена навмисно: переходи між тижнями відбуваються лише через кнопки "<"/">"
 }
 
 function formatDateISO(date) {
@@ -415,10 +394,10 @@ function renderPublicWeek() {
     daysDates.push(d);
   }
 
-  const isMobile = window.innerWidth <= 640;
   els.container.innerHTML = '';
   const wrap = document.createElement('div');
-  wrap.className = `week-columns ${isMobile ? 'mobile-stack' : ''}`;
+  // Дні тижня розміщуються парами по ширині: Пн+Вт, Ср+Чт, Пт+Сб, Нд окремо.
+  wrap.className = 'week-columns week-pairs';
 
   daysDates.forEach(date => {
     const dateISO = formatDateISO(date);

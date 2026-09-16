@@ -30,6 +30,7 @@
       --slot-unavail-text: #b91c1c;
       --overlay: rgba(15, 23, 42, 0.5);
       --shadow: rgba(0, 0, 0, 0.1);
+      --month-sticky-top: 0px;
     }
     [data-theme="dark"] {
       --bg: #0f172a;
@@ -89,9 +90,10 @@
 
     .calendar-grid { display: grid; gap: 8px; margin-top: 10px; width: 100%; touch-action: pan-y; }
     .grid-month { grid-template-columns: repeat(7, 1fr); }
+    /* Заголовки днів тижня в режимі "Місяць" закріплені під шапкою при прокрутці */
+    .grid-month .day-header { position: sticky; top: var(--month-sticky-top, 0px); z-index: 400; box-shadow: 0 2px 4px var(--shadow); }
 
     .week-columns { display: flex; gap: 8px; margin-top: 10px; align-items: flex-start; touch-action: pan-y; }
-    .week-columns.mobile-stack { flex-direction: column; }
     .day-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
 
     .day-header { text-align: center; padding: 8px 4px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -208,6 +210,8 @@
     /* Адаптація під мобільні */
     @media (max-width: 640px) {
       body { padding: 10px; }
+      /* У режимі "Тиждень" на мобільному екрані дні розміщуються парами: Пн+Вт, Ср+Чт, Пт+Сб, Нд окремо */
+      .week-columns.week-pairs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
       .header h1 { font-size: 1.2rem; text-align: center; width: 100%; margin-bottom: 4px; }
       .controls { flex-direction: column; align-items: stretch; gap: 10px; }
       .date-group { justify-content: space-between; width: 100%; }

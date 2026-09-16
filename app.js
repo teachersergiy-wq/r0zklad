@@ -160,7 +160,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || 'light');
   initTimeOptions();
   setupEventListeners();
-  setupSwipeNavigation();
 
   const urlParams = new URLSearchParams(window.location.search);
   state.key = urlParams.get('key') || 'default_schedule';
@@ -187,6 +186,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 window.addEventListener('resize', () => {
   if (state.view === 'week') render();
+  if (state.view === 'month') updateMonthStickyOffset();
 });
 
 // ===================== ЗАГАЛЬНІ УТИЛІТИ: TOAST / CONFIRM / ТЕМА =====================
@@ -739,11 +739,11 @@ function buildDayEntries(dateISO, options) {
 
 function renderWeekOrDayColumns(daysDates, options) {
   const isWeek = daysDates.length > 1;
-  const isMobile = window.innerWidth <= 640;
 
   elements.calendarGrid.className = '';
   const columnsWrap = document.createElement('div');
-  columnsWrap.className = `week-columns ${isWeek && isMobile ? 'mobile-stack' : ''}`;
+  // У режимі "Тиждень" дні розміщуються парами по ширині: Пн+Вт, Ср+Чт, Пт+Сб, Нд окремо (7 днів у 2 колонки).
+  columnsWrap.className = `week-columns ${isWeek ? 'week-pairs' : ''}`;
 
   daysDates.forEach(date => {
     const dateISO = formatDateISO(date);
@@ -893,8 +893,17 @@ function createLessonCard(lesson, pastDate) {
   return card;
 }
 
+function updateMonthStickyOffset() {
+  // Заголовки днів тижня в режимі "Місяць" мають прилипати одразу під верхньою панеллю (.header),
+  // тож визначаємо її фактичну висоту (вона змінюється залежно від ширини екрана) і передаємо в CSS.
+  const header = document.querySelector('.header');
+  const offset = header ? Math.round(header.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty('--month-sticky-top', offset + 'px');
+}
+
 function renderMonthView() {
   elements.calendarGrid.className = 'calendar-grid grid-month';
+  updateMonthStickyOffset();
 
   const year = state.currentDate.getFullYear();
   const month = state.currentDate.getMonth();
@@ -1590,30 +1599,7 @@ async function copyToClipboard(text) {
   }
 }
 
-// ===================== СВАЙП-НАВІГАЦІЯ (МОБІЛЬНІ) =====================
-
-function setupSwipeNavigation() {
-  let touchStartX = 0, touchStartY = 0, touchActive = false;
-
-  elements.calendarGrid.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    touchActive = true;
-  }, { passive: true });
-
-  elements.calendarGrid.addEventListener('touchend', (e) => {
-    if (!touchActive) return;
-    touchActive = false;
-    const touch = e.changedTouches[0];
-    const dx = touch.clientX - touchStartX;
-    const dy = touch.clientY - touchStartY;
-    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      if (dx < 0) elements.nextBtn.click();
-      else elements.prevBtn.click();
-    }
-  }, { passive: true });
-}
+// ===================== НАВІГАЦІЯ: ЛИШЕ ЧЕРЕЗ КНОПКИ (свайп вимкнено навмисно) =====================
 
 // ===================== ОБРОБНИКИ ПОДІЙ =====================
 
