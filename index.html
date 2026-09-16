@@ -160,6 +160,13 @@
     .student-item-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
     .student-extra-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
     .student-extra-fields input { padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; font-size: 0.82rem; color: var(--text); background: var(--surface); }
+    .student-name-block { flex: 1; min-width: 120px; }
+    .student-name-line { font-weight: 700; font-size: 0.95rem; color: var(--text-strong); }
+    .student-grade-line { font-size: 0.78rem; color: var(--text-muted); margin-top: 1px; }
+    .student-contact-line { font-size: 0.82rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+    .student-contact-line .empty { font-style: italic; }
+    button.small-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .student-edit-name-input { width: 100%; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 6px; font-weight: 600; font-size: 0.9rem; background: var(--surface); color: var(--text); }
 
     .setting-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-alt); margin-bottom: 10px; }
 
@@ -286,9 +293,25 @@
   </div>
 
   <!-- Модальне вікно управління учнями -->
-  <div id="students-modal" class="modal hidden" data-confirm-btn="add-student-btn" data-cancel-btn="close-students-modal-btn">
+  <div id="students-modal" class="modal hidden" data-confirm-btn="close-students-modal-btn" data-cancel-btn="close-students-modal-btn">
     <div class="modal-content">
       <h2 style="margin-top:0; font-size:1.25rem;">Управління учнями</h2>
+
+      <button id="open-add-student-modal-btn" type="button" class="primary" style="width: 100%;">+ Додати учня</button>
+
+      <h3 style="font-size: 1rem; margin-top: 18px; margin-bottom: 10px;">Список учнів</h3>
+      <div id="students-list" style="max-height: 420px; overflow-y: auto;"></div>
+
+      <div style="text-align: right; margin-top: 16px;">
+        <button id="close-students-modal-btn" style="width: 100%;">Закрити</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальне вікно додавання нового учня -->
+  <div id="add-student-modal" class="modal hidden" data-confirm-btn="save-new-student-btn" data-cancel-btn="close-add-student-modal-btn">
+    <div class="modal-content">
+      <h2 style="margin-top:0; font-size:1.25rem;">Додати учня</h2>
 
       <div class="form-group">
         <label>Ім'я учня</label>
@@ -322,13 +345,9 @@
         <div id="new-student-swatches" class="color-swatches"></div>
       </div>
 
-      <button id="add-student-btn" type="button" class="primary" style="width: 100%; margin-top: 4px;">+ Додати учня</button>
-
-      <h3 style="font-size: 1rem; margin-top: 20px; margin-bottom: 10px;">Список учнів</h3>
-      <div id="students-list" style="max-height: 320px; overflow-y: auto;"></div>
-
-      <div style="text-align: right; margin-top: 16px;">
-        <button id="close-students-modal-btn" style="width: 100%;">Закрити</button>
+      <div class="flex-row" style="margin-top: 4px;">
+        <button id="close-add-student-modal-btn" type="button" style="flex:1;">Скасувати</button>
+        <button id="save-new-student-btn" type="button" class="primary" style="flex:1;">+ Додати учня</button>
       </div>
     </div>
   </div>

@@ -39,7 +39,8 @@ let state = {
   isEditMode: false,
   editingLessonId: null,
   currentInfoStudentId: null,
-  selectedNewStudentColor: PASTEL_COLORS[0]
+  selectedNewStudentColor: PASTEL_COLORS[0],
+  editingStudentIds: new Set()
 };
 
 const elements = {
@@ -88,14 +89,18 @@ const elements = {
 
   studentsModal: document.getElementById('students-modal'),
   closeStudentsModalBtn: document.getElementById('close-students-modal-btn'),
+  openAddStudentModalBtn: document.getElementById('open-add-student-modal-btn'),
+  studentsList: document.getElementById('students-list'),
+
+  addStudentModal: document.getElementById('add-student-modal'),
+  closeAddStudentModalBtn: document.getElementById('close-add-student-modal-btn'),
   newStudentName: document.getElementById('new-student-name'),
   newStudentGrade: document.getElementById('new-student-grade'),
   newStudentPhone: document.getElementById('new-student-phone'),
   newStudentParentName: document.getElementById('new-student-parent-name'),
   newStudentParentPhone: document.getElementById('new-student-parent-phone'),
   newStudentSwatches: document.getElementById('new-student-swatches'),
-  addStudentBtn: document.getElementById('add-student-btn'),
-  studentsList: document.getElementById('students-list'),
+  saveNewStudentBtn: document.getElementById('save-new-student-btn'),
 
   lessonModal: document.getElementById('lesson-modal'),
   lessonModalTitle: document.getElementById('lesson-modal-title'),
@@ -1201,32 +1206,56 @@ function renderStudentsList() {
   if (state.students.length === 0) {
     const emptyMsg = document.createElement('div');
     emptyMsg.style.cssText = 'color:var(--text-muted); font-size:0.88rem; text-align:center; padding:12px;';
-    emptyMsg.textContent = 'Список порожній. Додайте учня вище.';
+    emptyMsg.textContent = 'Список порожній. Додайте учня кнопкою вище.';
     elements.studentsList.appendChild(emptyMsg);
     return;
   }
 
   state.students.forEach(student => {
+    const idStr = String(student.id);
+    const isEditing = state.editingStudentIds.has(idStr);
+
     const item = document.createElement('div');
     item.className = 'student-item';
 
+    // ---------- Верхній рядок: ім'я/клас (або поле редагування імені) + кнопки ----------
     const headerRow = document.createElement('div');
     headerRow.className = 'student-item-header';
 
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.value = student.name || '';
-    nameInput.style.cssText = 'flex:1; padding:6px 10px; border:1px solid var(--border-strong); border-radius:6px; font-weight:600; font-size:0.9rem; min-width:120px; background:var(--surface); color:var(--text);';
-    nameInput.onchange = async (e) => {
-      const val = e.target.value.trim();
-      if (val) {
-        const oldName = student.name;
-        student.name = val;
-        logAudit('Викладач', `Перейменовано учня "${oldName}" → "${val}"`);
-        await saveSchedule();
-        render();
+    const nameBlock = document.createElement('div');
+    nameBlock.className = 'student-name-block';
+
+    if (isEditing) {
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.className = 'student-edit-name-input';
+      nameInput.value = student.name || '';
+      nameInput.placeholder = "Ім'я учня";
+      nameInput.onchange = async (e) => {
+        const val = e.target.value.trim();
+        if (val) {
+          const oldName = student.name;
+          student.name = val;
+          if (oldName !== val) logAudit('Викладач', `Перейменовано учня "${oldName}" → "${val}"`);
+          await saveSchedule();
+          render();
+        } else {
+          e.target.value = student.name || '';
+        }
+      };
+      nameBlock.appendChild(nameInput);
+    } else {
+      const nameLine = document.createElement('div');
+      nameLine.className = 'student-name-line';
+      nameLine.textContent = student.name || '';
+      nameBlock.appendChild(nameLine);
+      if (student.grade) {
+        const gradeLine = document.createElement('div');
+        gradeLine.className = 'student-grade-line';
+        gradeLine.textContent = `Клас: ${student.grade}`;
+        nameBlock.appendChild(gradeLine);
       }
-    };
+    }
 
     const historyBtn = document.createElement('button');
     historyBtn.type = 'button';
@@ -1238,6 +1267,18 @@ function renderStudentsList() {
       openStudentInfoModal(student.id);
     };
 
+    const editToggleBtn = document.createElement('button');
+    editToggleBtn.type = 'button';
+    editToggleBtn.className = `small-btn${isEditing ? ' active' : ''}`;
+    editToggleBtn.textContent = isEditing ? '✓ Готово' : '✏️ Редагувати';
+    editToggleBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (state.editingStudentIds.has(idStr)) state.editingStudentIds.delete(idStr);
+      else state.editingStudentIds.add(idStr);
+      renderStudentsList();
+    };
+
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'danger';
     deleteBtn.type = 'button';
@@ -1247,9 +1288,9 @@ function renderStudentsList() {
       e.stopPropagation();
       const confirmed = await showConfirm(`Видалити учня "${student.name}" та всі його уроки?`);
       if (confirmed) {
-        const studentIdStr = String(student.id);
-        state.students = state.students.filter(s => String(s.id) !== studentIdStr);
-        state.lessons = state.lessons.filter(l => String(l.studentId) !== studentIdStr);
+        state.students = state.students.filter(s => String(s.id) !== idStr);
+        state.lessons = state.lessons.filter(l => String(l.studentId) !== idStr);
+        state.editingStudentIds.delete(idStr);
         logAudit('Викладач', `Видалено учня "${student.name}" та його уроки`);
         await saveSchedule();
         render();
@@ -1258,52 +1299,80 @@ function renderStudentsList() {
       }
     };
 
-    headerRow.appendChild(nameInput);
+    headerRow.appendChild(nameBlock);
     headerRow.appendChild(historyBtn);
+    headerRow.appendChild(editToggleBtn);
     headerRow.appendChild(deleteBtn);
-
-    const extraFields = document.createElement('div');
-    extraFields.className = 'student-extra-fields';
-
-    const makeExtraInput = (placeholder, value, onSave) => {
-      const inp = document.createElement('input');
-      inp.type = 'text';
-      inp.placeholder = placeholder;
-      inp.value = value || '';
-      inp.onchange = async (e) => {
-        onSave(e.target.value.trim());
-        await saveSchedule();
-      };
-      return inp;
-    };
-
-    extraFields.appendChild(makeExtraInput('Клас', student.grade, (v) => { student.grade = v; }));
-    extraFields.appendChild(makeExtraInput('Контактний телефон', student.phone, (v) => { student.phone = v; }));
-    extraFields.appendChild(makeExtraInput("Ім'я батьків", student.parentName, (v) => { student.parentName = v; }));
-    extraFields.appendChild(makeExtraInput('Телефон батьків', student.parentPhone, (v) => { student.parentPhone = v; }));
-
-    const swatchesDiv = document.createElement('div');
-    swatchesDiv.className = 'student-color-swatches';
-
-    PASTEL_COLORS.forEach(color => {
-      const dot = document.createElement('div');
-      dot.className = `swatch-dot ${student.color === color ? 'active' : ''}`;
-      dot.style.backgroundColor = color;
-      dot.onclick = async () => {
-        student.color = color;
-        await saveSchedule();
-        render();
-        renderStudentsList();
-      };
-      swatchesDiv.appendChild(dot);
-    });
-
     item.appendChild(headerRow);
-    item.appendChild(extraFields);
-    item.appendChild(swatchesDiv);
+
+    if (!isEditing) {
+      // ---------- Режим перегляду: лише контакти учня та батьків, без полів редагування ----------
+      const contactLine = document.createElement('div');
+      contactLine.className = 'student-contact-line';
+      const parts = [];
+      if (student.phone) parts.push(`📞 ${escapeHtml(student.phone)}`);
+      if (student.parentName) parts.push(`👤 ${escapeHtml(student.parentName)}`);
+      if (student.parentPhone) parts.push(`📞 батьки: ${escapeHtml(student.parentPhone)}`);
+      contactLine.innerHTML = parts.length ? parts.join(' &nbsp;·&nbsp; ') : '<span class="empty">Контакти не вказано</span>';
+      item.appendChild(contactLine);
+    } else {
+      // ---------- Режим редагування: усі поля учня та вибір кольору картки уроку ----------
+      const extraFields = document.createElement('div');
+      extraFields.className = 'student-extra-fields';
+
+      const makeExtraInput = (placeholder, value, onSave) => {
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.placeholder = placeholder;
+        inp.value = value || '';
+        inp.onchange = async (e) => {
+          onSave(e.target.value.trim());
+          await saveSchedule();
+        };
+        return inp;
+      };
+
+      extraFields.appendChild(makeExtraInput('Клас', student.grade, (v) => { student.grade = v; }));
+      extraFields.appendChild(makeExtraInput('Контактний телефон', student.phone, (v) => { student.phone = v; }));
+      extraFields.appendChild(makeExtraInput("Ім'я батьків", student.parentName, (v) => { student.parentName = v; }));
+      extraFields.appendChild(makeExtraInput('Телефон батьків', student.parentPhone, (v) => { student.parentPhone = v; }));
+      item.appendChild(extraFields);
+
+      const swatchesLabel = document.createElement('div');
+      swatchesLabel.style.cssText = 'font-size:0.78rem; font-weight:600; color:var(--text-muted); margin-top:2px;';
+      swatchesLabel.textContent = 'Колір картки уроку в розкладі:';
+      item.appendChild(swatchesLabel);
+
+      const swatchesDiv = document.createElement('div');
+      swatchesDiv.className = 'student-color-swatches';
+
+      PASTEL_COLORS.forEach(color => {
+        const dot = document.createElement('div');
+        dot.className = `swatch-dot ${student.color === color ? 'active' : ''}`;
+        dot.style.backgroundColor = color;
+        dot.onclick = async () => {
+          student.color = color;
+          await saveSchedule();
+          render();
+          renderStudentsList();
+        };
+        swatchesDiv.appendChild(dot);
+      });
+      item.appendChild(swatchesDiv);
+    }
 
     elements.studentsList.appendChild(item);
   });
+}
+
+function clearAddStudentForm() {
+  elements.newStudentName.value = '';
+  elements.newStudentGrade.value = '';
+  elements.newStudentPhone.value = '';
+  elements.newStudentParentName.value = '';
+  elements.newStudentParentPhone.value = '';
+  state.selectedNewStudentColor = PASTEL_COLORS[0];
+  renderNewStudentSwatches();
 }
 
 // ===================== УЧНІ: перегляд інформації (кнопка "Учні" на головній) =====================
@@ -1849,6 +1918,7 @@ function setupEventListeners() {
 
   elements.modalManageStudentsBtn.onclick = () => {
     elements.settingsModal.classList.add('hidden');
+    state.editingStudentIds.clear();
     renderStudentsList();
     elements.studentsModal.classList.remove('hidden');
   };
@@ -1924,6 +1994,17 @@ function setupEventListeners() {
 
   elements.closeStudentsModalBtn.onclick = () => elements.studentsModal.classList.add('hidden');
 
+  elements.openAddStudentModalBtn.onclick = () => {
+    clearAddStudentForm();
+    elements.studentsModal.classList.add('hidden');
+    elements.addStudentModal.classList.remove('hidden');
+  };
+
+  elements.closeAddStudentModalBtn.onclick = () => {
+    elements.addStudentModal.classList.add('hidden');
+    elements.studentsModal.classList.remove('hidden');
+  };
+
   elements.lessonPaidSelect.onchange = () => {
     togglePaymentDetailsVisibility();
     if (elements.lessonPaidSelect.value === 'true' && !elements.lessonPaidDate.value) {
@@ -1931,7 +2012,7 @@ function setupEventListeners() {
     }
   };
 
-  elements.addStudentBtn.onclick = async () => {
+  elements.saveNewStudentBtn.onclick = async () => {
     const name = elements.newStudentName.value.trim();
     if (!name) {
       showToast("Будь ласка, введіть ім'я учня!", 'error');
@@ -1950,14 +2031,13 @@ function setupEventListeners() {
 
     logAudit('Викладач', `Додано учня "${name}"`);
 
-    elements.newStudentName.value = '';
-    elements.newStudentGrade.value = '';
-    elements.newStudentPhone.value = '';
-    elements.newStudentParentName.value = '';
-    elements.newStudentParentPhone.value = '';
     await saveSchedule();
     render();
+
+    clearAddStudentForm();
+    elements.addStudentModal.classList.add('hidden');
     renderStudentsList();
+    elements.studentsModal.classList.remove('hidden');
     showToast('Учня додано.', 'success');
   };
 
