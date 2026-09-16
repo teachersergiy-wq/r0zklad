@@ -160,6 +160,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || 'light');
   initTimeOptions();
   setupEventListeners();
+  setupModalDismissBehaviors();
 
   const urlParams = new URLSearchParams(window.location.search);
   state.key = urlParams.get('key') || 'default_schedule';
@@ -226,6 +227,72 @@ function applyTheme(theme) {
 
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
+}
+
+// ===================== ЗАКРИТТЯ МОДАЛЬНИХ ВІКОН: ESC/ENTER (ПК), СВАЙП/КЛІК ПОВЗ (МОБІЛЬНІ) =====================
+
+// Межа ширини екрана, з якої поведінка вважається "мобільною" (узгоджена з @media у CSS).
+function isMobileMode() {
+  return window.innerWidth <= 640;
+}
+
+function getOpenModal() {
+  return document.querySelector('.modal:not(.hidden)');
+}
+
+// kind: 'confirm' (Enter) — виконує основну дію вікна (напр. "Зберегти"); 'cancel' (Esc,
+// клік повз вікно, свайп) — закриває БЕЗ збереження внесених змін. Обидва відпрацьовують
+// через клік по відповідній кнопці, тож поводяться так само, як і ручне натискання.
+function triggerModalAction(modal, kind) {
+  if (!modal) return;
+  const btnId = kind === 'confirm' ? modal.dataset.confirmBtn : modal.dataset.cancelBtn;
+  const btn = btnId ? document.getElementById(btnId) : null;
+  if (btn) btn.click();
+  else modal.classList.add('hidden');
+}
+
+function setupModalDismissBehaviors() {
+  // Esc / Enter - для роботи з клавіатурою на ПК.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' && e.key !== 'Enter') return;
+    const modal = getOpenModal();
+    if (!modal) return;
+    e.preventDefault();
+    triggerModalAction(modal, e.key === 'Escape' ? 'cancel' : 'confirm');
+  });
+
+  // Клік повз область вікна та змахування вбік - лише в мобільному режимі,
+  // завжди закриття БЕЗ збереження внесених змін (аналог Esc).
+  document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+      if (e.target !== modal) return; // клік саме по підложці, не по вмісту вікна
+      if (!isMobileMode()) return;
+      triggerModalAction(modal, 'cancel');
+    });
+
+    const content = modal.querySelector('.modal-content');
+    if (!content) return;
+
+    let touchStartX = 0, touchStartY = 0, touchActive = false;
+    content.addEventListener('touchstart', (e) => {
+      if (!isMobileMode() || e.touches.length !== 1) return;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchActive = true;
+    }, { passive: true });
+
+    content.addEventListener('touchend', (e) => {
+      if (!touchActive) return;
+      touchActive = false;
+      if (!isMobileMode()) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+      if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+        triggerModalAction(modal, 'cancel');
+      }
+    }, { passive: true });
+  });
 }
 
 // ===================== СИНХРОНІЗАЦІЯ / СТАТУС ЗБЕРЕЖЕННЯ =====================

@@ -259,7 +259,7 @@
   </div>
 
   <!-- Модальне вікно Налаштування -->
-  <div id="settings-modal" class="modal hidden">
+  <div id="settings-modal" class="modal hidden" data-confirm-btn="close-settings-modal-btn" data-cancel-btn="close-settings-modal-btn">
     <div class="modal-content">
       <h2 style="margin-top:0; font-size:1.25rem;">Налаштування</h2>
 
@@ -285,7 +285,7 @@
   </div>
 
   <!-- Модальне вікно управління учнями -->
-  <div id="students-modal" class="modal hidden">
+  <div id="students-modal" class="modal hidden" data-confirm-btn="add-student-btn" data-cancel-btn="close-students-modal-btn">
     <div class="modal-content">
       <h2 style="margin-top:0; font-size:1.25rem;">Управління учнями</h2>
 
@@ -333,7 +333,7 @@
   </div>
 
   <!-- Модальне вікно вибору учня (кнопка "Учні" на головній) -->
-  <div id="students-picker-modal" class="modal hidden">
+  <div id="students-picker-modal" class="modal hidden" data-confirm-btn="close-students-picker-modal-btn" data-cancel-btn="close-students-picker-modal-btn">
     <div class="modal-content">
       <h2 style="margin-top:0; font-size:1.25rem;">Учні</h2>
       <div id="students-picker-list" style="max-height: 400px; overflow-y: auto; margin-top: 10px;"></div>
@@ -344,7 +344,7 @@
   </div>
 
   <!-- Модальне вікно інформації про учня -->
-  <div id="student-info-modal" class="modal hidden">
+  <div id="student-info-modal" class="modal hidden" data-confirm-btn="close-student-info-modal-btn" data-cancel-btn="close-student-info-modal-btn">
     <div class="modal-content">
       <h2 style="margin-top:0; font-size:1.2rem;" id="student-info-title">Учень</h2>
 
@@ -374,7 +374,7 @@
   </div>
 
   <!-- Модальне вікно звітів та перевірки помилок -->
-  <div id="reports-modal" class="modal hidden">
+  <div id="reports-modal" class="modal hidden" data-confirm-btn="close-reports-modal-btn" data-cancel-btn="close-reports-modal-btn">
     <div class="modal-content wide">
       <h2 style="margin-top:0; font-size:1.25rem;">Звіти та перевірка помилок</h2>
 
@@ -412,7 +412,7 @@
   </div>
 
   <!-- Модальне вікно заявок на запис -->
-  <div id="requests-modal" class="modal hidden">
+  <div id="requests-modal" class="modal hidden" data-confirm-btn="close-requests-modal-btn" data-cancel-btn="close-requests-modal-btn">
     <div class="modal-content">
       <h2 style="margin-top:0; font-size:1.2rem;">Заявки на запис від учнів</h2>
       <div id="requests-list" style="max-height: 420px; overflow-y: auto; margin-top: 10px;"></div>
@@ -423,7 +423,7 @@
   </div>
 
   <!-- Модальне вікно журналу змін -->
-  <div id="audit-log-modal" class="modal hidden">
+  <div id="audit-log-modal" class="modal hidden" data-confirm-btn="close-audit-log-modal-btn" data-cancel-btn="close-audit-log-modal-btn">
     <div class="modal-content wide">
       <h2 style="margin-top:0; font-size:1.2rem;">Журнал змін</h2>
       <div id="audit-log-list" style="max-height: 480px; overflow-y: auto; margin-top: 10px;"></div>
@@ -434,7 +434,7 @@
   </div>
 
   <!-- Модальне вікно резервних копій -->
-  <div id="backups-modal" class="modal hidden">
+  <div id="backups-modal" class="modal hidden" data-confirm-btn="close-backups-modal-btn" data-cancel-btn="close-backups-modal-btn">
     <div class="modal-content">
       <h2 style="margin-top:0; font-size:1.2rem;">Резервні копії</h2>
       <p style="font-size:0.82rem; color:var(--text-muted);">Копія створюється автоматично не частіше ніж раз на 24 години при відкритті застосунку. Зберігаються останні 14 копій.</p>
@@ -446,7 +446,7 @@
   </div>
 
   <!-- Модальне вікно посилання для учнів (загальне) -->
-  <div id="student-link-modal" class="modal hidden">
+  <div id="student-link-modal" class="modal hidden" data-confirm-btn="close-student-link-modal-btn" data-cancel-btn="close-student-link-modal-btn">
     <div class="modal-content">
       <h2 style="margin-top:0; font-size:1.2rem;">Загальне посилання на розклад</h2>
       <p style="font-size:0.88rem; color:var(--text-muted);">Показує лише вільні для запису години, без прив'язки до конкретного учня та без можливості подати заявку.</p>
@@ -461,7 +461,7 @@
   </div>
 
   <!-- Універсальне модальне вікно підтвердження -->
-  <div id="confirm-modal" class="modal hidden">
+  <div id="confirm-modal" class="modal hidden" data-confirm-btn="confirm-modal-ok-btn" data-cancel-btn="confirm-modal-cancel-btn">
     <div class="modal-content" style="max-width: 380px;">
       <p id="confirm-modal-message" style="font-size: 0.95rem; margin-top:0; margin-bottom: 20px;"></p>
       <div class="flex-row">
@@ -472,7 +472,7 @@
   </div>
 
   <!-- Модальне вікно додавання/редагування уроку -->
-  <div id="lesson-modal" class="modal hidden">
+  <div id="lesson-modal" class="modal hidden" data-confirm-btn="save-lesson-btn" data-cancel-btn="close-lesson-modal-btn">
     <div class="modal-content">
       <h2 style="margin-top:0; font-size:1.25rem;" id="lesson-modal-title">Додати урок</h2>
 

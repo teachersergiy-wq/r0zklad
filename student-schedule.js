@@ -67,8 +67,70 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   setupPublicListeners();
+  setupModalDismissBehaviors();
   renderPublicWeek();
 });
+
+// ===================== ЗАКРИТТЯ МОДАЛЬНИХ ВІКОН: ESC/ENTER (ПК), СВАЙП/КЛІК ПОВЗ (МОБІЛЬНІ) =====================
+
+function isMobileMode() {
+  return window.innerWidth <= 640;
+}
+
+function getOpenModal() {
+  return document.querySelector('.modal:not(.hidden)');
+}
+
+// kind: 'confirm' (Enter) — основна дія вікна; 'cancel' (Esc, клік повз, свайп) — закриття
+// БЕЗ надсилання заявки/збереження внесеного.
+function triggerModalAction(modal, kind) {
+  if (!modal) return;
+  const btnId = kind === 'confirm' ? modal.dataset.confirmBtn : modal.dataset.cancelBtn;
+  const btn = btnId ? document.getElementById(btnId) : null;
+  if (btn) btn.click();
+  else modal.classList.add('hidden');
+}
+
+function setupModalDismissBehaviors() {
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' && e.key !== 'Enter') return;
+    const modal = getOpenModal();
+    if (!modal) return;
+    e.preventDefault();
+    triggerModalAction(modal, e.key === 'Escape' ? 'cancel' : 'confirm');
+  });
+
+  document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+      if (e.target !== modal) return;
+      if (!isMobileMode()) return;
+      triggerModalAction(modal, 'cancel');
+    });
+
+    const content = modal.querySelector('.modal-content');
+    if (!content) return;
+
+    let touchStartX = 0, touchStartY = 0, touchActive = false;
+    content.addEventListener('touchstart', (e) => {
+      if (!isMobileMode() || e.touches.length !== 1) return;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchActive = true;
+    }, { passive: true });
+
+    content.addEventListener('touchend', (e) => {
+      if (!touchActive) return;
+      touchActive = false;
+      if (!isMobileMode()) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+      if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+        triggerModalAction(modal, 'cancel');
+      }
+    }, { passive: true });
+  });
+}
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
