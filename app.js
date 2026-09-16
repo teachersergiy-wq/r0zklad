@@ -479,6 +479,7 @@ function sanitizeState() {
   state.blockedSlots = state.blockedSlots.filter(b => b && b.date && b.time).map(b => ({ date: String(b.date), time: String(b.time) }));
   state.availableSlots = state.availableSlots.filter(b => b && b.date && b.time).map(b => ({ date: String(b.date), time: String(b.time) }));
   state.bookingRequests = state.bookingRequests.filter(r => r && r.date && r.time && r.studentId);
+  state.bookingRequests.forEach(r => { r.type = r.type === 'reschedule' ? 'reschedule' : 'booking'; });
 }
 
 async function loadSchedule() {
@@ -1528,7 +1529,11 @@ function renderRequestsList() {
 
     const row = document.createElement('div');
     row.className = 'request-row';
-    row.innerHTML = `<strong>${escapeHtml(student ? student.name : 'Невідомий учень')}</strong><span>${escapeHtml(formatDateDisplay(r.date))}, ${escapeHtml(r.time)}</span>`;
+    if (r.type === 'reschedule') {
+      row.innerHTML = `<strong>${escapeHtml(student ? student.name : 'Невідомий учень')}</strong><span>Перенесення: ${escapeHtml(formatDateDisplay(r.oldDate))} ${escapeHtml(r.oldTime || '')} → ${escapeHtml(formatDateDisplay(r.date))}, ${escapeHtml(r.time)}</span>`;
+    } else {
+      row.innerHTML = `<strong>${escapeHtml(student ? student.name : 'Невідомий учень')}</strong><span>${escapeHtml(formatDateDisplay(r.date))}, ${escapeHtml(r.time)}</span>`;
+    }
 
     const actions = document.createElement('div');
     actions.className = 'request-actions';
@@ -1559,6 +1564,36 @@ async function approveBookingRequest(reqId) {
 
   const hour = parseInt(req.time.split(':')[0], 10);
   const status = getSlotStatus(req.date, hour);
+
+  if (req.type === 'reschedule') {
+    const lesson = state.lessons.find(l => String(l.id) === String(req.lessonId));
+    if (!lesson) {
+      showToast('Урок для перенесення вже не знайдено (можливо, видалений).', 'error');
+      state.bookingRequests = state.bookingRequests.filter(r => String(r.id) !== String(reqId));
+      await saveSchedule();
+      renderRequestsList();
+      updateBadgeCounts();
+      return;
+    }
+    // Новий час зайнятий, якщо там є урок, відмінний від того, що переносимо.
+    const conflict = status.status === 'lesson' && status.lessons.some(l => String(l.id) !== String(lesson.id));
+    if (conflict) {
+      showToast('Цей час вже зайнято іншим уроком.', 'error');
+      return;
+    }
+
+    logAudit('Викладач', `Підтверджено перенесення уроку ${student ? student.name : 'учня'} з ${req.oldDate} ${req.oldTime} на ${req.date} ${req.time}`);
+    lesson.date = req.date;
+    lesson.time = req.time;
+
+    state.bookingRequests = state.bookingRequests.filter(r => String(r.id) !== String(reqId));
+    await saveSchedule();
+    renderRequestsList();
+    render();
+    showToast('Перенесення підтверджено, урок оновлено в розкладі.', 'success');
+    return;
+  }
+
   if (status.status === 'lesson') {
     showToast('Цей час вже зайнято іншим уроком.', 'error');
     return;
@@ -1591,15 +1626,21 @@ async function rejectBookingRequest(reqId) {
   if (!req) return;
   const student = state.students.find(s => String(s.id) === String(req.studentId));
 
-  const confirmed = await showConfirm(`Відхилити заявку від ${student ? student.name : 'учня'} на ${req.date} ${req.time}?`);
+  const isReschedule = req.type === 'reschedule';
+  const confirmMessage = isReschedule
+    ? `Відхилити запит на перенесення уроку від ${student ? student.name : 'учня'} (${req.oldDate} ${req.oldTime} → ${req.date} ${req.time})?`
+    : `Відхилити заявку від ${student ? student.name : 'учня'} на ${req.date} ${req.time}?`;
+  const confirmed = await showConfirm(confirmMessage);
   if (!confirmed) return;
 
   state.bookingRequests = state.bookingRequests.filter(r => String(r.id) !== String(reqId));
-  logAudit('Викладач', `Відхилено заявку від ${student ? student.name : 'учня'} на ${req.date} ${req.time}`);
+  logAudit('Викладач', isReschedule
+    ? `Відхилено запит на перенесення уроку від ${student ? student.name : 'учня'} (${req.oldDate} ${req.oldTime} → ${req.date} ${req.time})`
+    : `Відхилено заявку від ${student ? student.name : 'учня'} на ${req.date} ${req.time}`);
   await saveSchedule();
   renderRequestsList();
   updateBadgeCounts();
-  showToast('Заявку відхилено.', 'info');
+  showToast(isReschedule ? 'Запит на перенесення відхилено.' : 'Заявку відхилено.', 'info');
 }
 
 // ===================== ЗВІТИ =====================
