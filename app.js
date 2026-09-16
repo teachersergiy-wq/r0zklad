@@ -43,7 +43,6 @@ let state = {
 };
 
 const elements = {
-  appHeader: document.getElementById('app-header'),
   currentDateDisplay: document.getElementById('current-date-display'),
   calendarGrid: document.getElementById('calendar-grid'),
   todayBtn: document.getElementById('today-btn'),
@@ -177,15 +176,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderNewStudentSwatches();
   render();
 
-  // Стежимо за висотою "липучого" верхнього хедера, щоб дні тижня в режимі
-  // "Місяць" правильно прилипали одразу під ним, а не під нього.
-  if (elements.appHeader) {
-    updateHeaderHeightVar();
-    if (typeof ResizeObserver !== 'undefined') {
-      new ResizeObserver(updateHeaderHeightVar).observe(elements.appHeader);
-    }
-  }
-
   // Періодична перевірка на автозавершення уроків, поки застосунок відкритий
   setInterval(async () => {
     if (autoCompleteLessons()) {
@@ -195,13 +185,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }, 30 * 60 * 1000);
 });
 
-function updateHeaderHeightVar() {
-  if (!elements.appHeader) return;
-  document.documentElement.style.setProperty('--header-height', `${elements.appHeader.offsetHeight}px`);
-}
-
 window.addEventListener('resize', () => {
-  updateHeaderHeightVar();
   if (state.view === 'week') render();
 });
 
@@ -488,7 +472,6 @@ function render() {
   updateViewButtons();
   updateStudentSelectOptions();
   updateBadgeCounts();
-  updateHeaderHeightVar();
   renderGrid();
 }
 
@@ -923,7 +906,7 @@ function renderMonthView() {
 
   DAY_NAMES_SHORT.forEach(name => {
     const h = document.createElement('div');
-    h.className = 'day-header month-weekday-header';
+    h.className = 'day-header';
     h.style.cssText = 'font-weight:700; font-size:0.85rem;';
     h.textContent = name;
     elements.calendarGrid.appendChild(h);
