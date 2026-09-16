@@ -36,6 +36,8 @@ let state = {
   backups: [],
   currentDate: new Date(),
   view: 'day',
+  filterType: 'all', // 'all' | 'student' | 'planned' | 'planned-overdue' | 'completed' | 'completed-unpaid' | 'paid' | 'free'
+  filterStudentId: null,
   isEditMode: false,
   editingLessonId: null,
   currentInfoStudentId: null,
@@ -52,6 +54,9 @@ const elements = {
   viewDayBtn: document.getElementById('view-day-btn'),
   viewWeekBtn: document.getElementById('view-week-btn'),
   viewMonthBtn: document.getElementById('view-month-btn'),
+
+  filterTypeSelect: document.getElementById('filter-type-select'),
+  filterStudentSelect: document.getElementById('filter-student-select'),
 
   themeToggleBtn: document.getElementById('theme-toggle-btn'),
   syncStatus: document.getElementById('sync-status'),
@@ -549,6 +554,8 @@ function render() {
   updateDateDisplay();
   updateViewButtons();
   updateStudentSelectOptions();
+  updateFilterStudentSelectOptions();
+  updateFilterVisibility();
   updateBadgeCounts();
   renderGrid();
 }
@@ -627,6 +634,70 @@ function updateStudentSelectOptions() {
     opt.textContent = s.name;
     elements.lessonStudentSelect.appendChild(opt);
   });
+}
+
+// ===================== ФІЛЬТР РОЗКЛАДУ =====================
+
+function updateFilterStudentSelectOptions() {
+  const select = elements.filterStudentSelect;
+  if (!select) return;
+  const prevValue = state.filterStudentId != null ? String(state.filterStudentId) : '';
+  select.innerHTML = '';
+  state.students.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = String(s.id);
+    opt.textContent = s.name;
+    select.appendChild(opt);
+  });
+
+  if (state.students.length === 0) {
+    state.filterStudentId = null;
+    return;
+  }
+
+  const stillExists = state.students.some(s => String(s.id) === prevValue);
+  if (!stillExists) state.filterStudentId = state.students[0].id;
+  select.value = String(state.filterStudentId);
+}
+
+function updateFilterVisibility() {
+  if (!elements.filterStudentSelect) return;
+  elements.filterStudentSelect.style.display = state.filterType === 'student' ? '' : 'none';
+}
+
+// Чи відповідає урок обраному фільтру відображення розкладу.
+function lessonMatchesFilter(lesson) {
+  const isPaid = lesson.paid === true || lesson.paid === 'true';
+  const isCompleted = lesson.status === 'completed';
+
+  switch (state.filterType) {
+    case 'student':
+      return state.filterStudentId != null && String(lesson.studentId) === String(state.filterStudentId);
+    case 'planned':
+      return !isCompleted;
+    case 'planned-overdue':
+      return !isCompleted && isPastDate(lesson.date);
+    case 'completed':
+      return isCompleted;
+    case 'completed-unpaid':
+      return isCompleted && !isPaid;
+    case 'paid':
+      return isPaid;
+    case 'free':
+      return false; // у цьому режимі уроки взагалі не показуються
+    case 'all':
+    default:
+      return true;
+  }
+}
+
+// Чи показувати вільні (доступні) години при поточному фільтрі.
+function shouldShowFreeSlots() {
+  return state.filterType === 'all' || state.filterType === 'free';
+}
+
+function isFilterActive() {
+  return state.filterType !== 'all';
 }
 
 function getStartOfWeek(d) {
@@ -774,7 +845,9 @@ function getRelevantHours(dateISO) {
 
 function buildDayEntries(dateISO, options) {
   const merge = !!options.merge;
-  const showUnavailable = !!options.showUnavailable;
+  // Позначки "Недоступно" мають сенс лише в загальному режимі перегляду (без активного фільтра відображення).
+  const showUnavailable = !!options.showUnavailable && !isFilterActive();
+  const showFree = shouldShowFreeSlots();
   const hours = getRelevantHours(dateISO);
 
   const entries = [];
@@ -792,11 +865,13 @@ function buildDayEntries(dateISO, options) {
 
     if (info.status === 'lesson') {
       flushRun();
-      entries.push({ type: 'lesson', hour: h, lessons: info.lessons });
+      const matchedLessons = info.lessons.filter(lessonMatchesFilter);
+      if (matchedLessons.length > 0) entries.push({ type: 'lesson', hour: h, lessons: matchedLessons });
       return;
     }
 
     if (info.status === 'available') {
+      if (!showFree) { flushRun(); return; }
       if (merge && h < DEFAULT_OPEN_HOUR) {
         if (run.length && run[run.length - 1] !== h - 1) flushRun();
         run.push(h);
@@ -836,7 +911,7 @@ function renderWeekOrDayColumns(daysDates, options) {
     if (entries.length === 0) {
       const emptyMsg = document.createElement('div');
       emptyMsg.style.cssText = 'color:var(--text-muted); font-size:0.78rem; text-align:center; padding:8px;';
-      emptyMsg.textContent = 'Немає вільних годин';
+      emptyMsg.textContent = isFilterActive() ? 'Немає записів за фільтром' : 'Немає вільних годин';
       column.appendChild(emptyMsg);
     }
 
@@ -1019,7 +1094,7 @@ function renderMonthView() {
     numDiv.textContent = day;
     cell.appendChild(numDiv);
 
-    const dayLessons = state.lessons.filter(l => l.date === dateISO);
+    const dayLessons = state.lessons.filter(l => l.date === dateISO && lessonMatchesFilter(l));
     dayLessons.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
     dayLessons.forEach(l => {
@@ -2172,6 +2247,19 @@ function setupEventListeners() {
   elements.viewDayBtn.onclick = () => { state.view = 'day'; render(); };
   elements.viewWeekBtn.onclick = () => { state.view = 'week'; render(); };
   elements.viewMonthBtn.onclick = () => { state.view = 'month'; render(); };
+
+  elements.filterTypeSelect.onchange = (e) => {
+    state.filterType = e.target.value;
+    if (state.filterType === 'student' && state.filterStudentId == null && state.students.length > 0) {
+      state.filterStudentId = state.students[0].id;
+    }
+    render();
+  };
+
+  elements.filterStudentSelect.onchange = (e) => {
+    state.filterStudentId = e.target.value;
+    render();
+  };
 
   elements.todayBtn.onclick = () => { state.currentDate = new Date(); render(); };
 

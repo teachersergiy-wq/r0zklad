@@ -62,7 +62,10 @@
     .header { position: sticky; top: 0; z-index: 500; background: var(--bg); display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; padding: 8px 0; }
     .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; justify-content: space-between; }
 
-    .date-group, .view-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .date-group, .view-group, .filter-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .filter-group { width: 100%; justify-content: flex-start; }
+    .filter-group label { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+    .filter-group select { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-size: 0.85rem; font-weight: 600; }
 
     button { cursor: pointer; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); font-weight: 600; font-size: 0.88rem; transition: background 0.15s; color: var(--text); }
     button:hover { background: var(--surface-alt); }
@@ -224,6 +227,7 @@
       .date-group { justify-content: space-between; width: 100%; }
       .view-group { width: 100%; justify-content: space-between; }
       .view-group button { flex: 1; text-align: center; }
+      .filter-group select { flex: 1; min-width: 0; }
       #current-date-display { flex: 1; font-size: 0.9rem; }
       .date-display-big { font-size: 1.5rem; }
       .action-buttons-row { width: 100%; justify-content: space-between; }
@@ -248,6 +252,21 @@
         <button id="view-day-btn">День</button>
         <button id="view-week-btn">Тиждень</button>
         <button id="view-month-btn">Місяць</button>
+      </div>
+
+      <div class="filter-group">
+        <label for="filter-type-select">Показати:</label>
+        <select id="filter-type-select">
+          <option value="all">Усе (за замовчуванням)</option>
+          <option value="student">Розклад учня…</option>
+          <option value="planned">Усі заплановані уроки</option>
+          <option value="planned-overdue">Заплановані, дата яких вже пройшла</option>
+          <option value="completed">Усі проведені уроки</option>
+          <option value="completed-unpaid">Проведені неоплачені уроки</option>
+          <option value="paid">Оплачені уроки</option>
+          <option value="free">Усі вільні (доступні) години</option>
+        </select>
+        <select id="filter-student-select" style="display:none;"></select>
       </div>
 
       <div class="action-buttons-row flex-row">
