@@ -123,13 +123,18 @@ const elements = {
 
   reportsModal: document.getElementById('reports-modal'),
   closeReportsModalBtn: document.getElementById('close-reports-modal-btn'),
+  reportTypeSelect: document.getElementById('report-type-select'),
   reportPeriodSelect: document.getElementById('report-period-select'),
   reportCustomRange: document.getElementById('report-custom-range'),
   reportFromDate: document.getElementById('report-from-date'),
   reportToDate: document.getElementById('report-to-date'),
   generateReportBtn: document.getElementById('generate-report-btn'),
   reportOutput: document.getElementById('report-output'),
-  reportIssues: document.getElementById('report-issues'),
+
+  modalIssuesBtn: document.getElementById('modal-issues-btn'),
+  issuesModal: document.getElementById('issues-modal'),
+  issuesList: document.getElementById('issues-list'),
+  closeIssuesModalBtn: document.getElementById('close-issues-modal-btn'),
 
   requestsModal: document.getElementById('requests-modal'),
   requestsList: document.getElementById('requests-list'),
@@ -1528,12 +1533,16 @@ async function rejectBookingRequest(reqId) {
   showToast('Заявку відхилено.', 'info');
 }
 
-// ===================== ЗВІТИ ТА ПЕРЕВІРКА ПОМИЛОК =====================
+// ===================== ЗВІТИ =====================
 
 function getReportRange() {
   const period = elements.reportPeriodSelect.value;
   const today = new Date();
 
+  if (period === 'today') {
+    const iso = formatDateISO(today);
+    return { from: iso, to: iso };
+  }
   if (period === 'week') {
     const start = getStartOfWeek(today);
     const end = new Date(start);
@@ -1545,6 +1554,26 @@ function getReportRange() {
     const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     return { from: formatDateISO(start), to: formatDateISO(end) };
   }
+  if (period === 'quarter') {
+    const q = Math.floor(today.getMonth() / 3);
+    const start = new Date(today.getFullYear(), q * 3, 1);
+    const end = new Date(today.getFullYear(), q * 3 + 3, 0);
+    return { from: formatDateISO(start), to: formatDateISO(end) };
+  }
+  if (period === 'year') {
+    const start = new Date(today.getFullYear(), 0, 1);
+    const end = new Date(today.getFullYear(), 11, 31);
+    return { from: formatDateISO(start), to: formatDateISO(end) };
+  }
+  if (period === 'all') {
+    if (state.lessons.length === 0) {
+      const iso = formatDateISO(today);
+      return { from: iso, to: iso };
+    }
+    const dates = state.lessons.map(l => l.date).sort();
+    return { from: dates[0], to: dates[dates.length - 1] };
+  }
+  // custom
   return {
     from: elements.reportFromDate.value || formatDateISO(today),
     to: elements.reportToDate.value || formatDateISO(today)
@@ -1553,6 +1582,67 @@ function getReportRange() {
 
 function generateReport() {
   const { from, to } = getReportRange();
+  const type = elements.reportTypeSelect.value;
+
+  if (type === 'summary') renderSummaryReport(from, to);
+  else if (type === 'planned') renderPlannedReport(from, to);
+  else if (type === 'payments') renderPaymentsReport(from, to);
+  else renderCompletedPaymentReport(from, to); // за замовчуванням - головний звіт
+}
+
+// Головний звіт: проведені уроки, розбиті на оплачені / неоплачені (по учнях і загалом).
+function renderCompletedPaymentReport(from, to) {
+  const lessons = state.lessons.filter(l => l.date >= from && l.date <= to && l.status === 'completed');
+  const paidLessons = lessons.filter(l => l.paid);
+  const unpaidLessons = lessons.filter(l => !l.paid);
+  const paidSum = paidLessons.reduce((sum, l) => sum + Number(l.paidAmount || 0), 0);
+  const unpaidEstimate = unpaidLessons.length * DEFAULT_PAID_AMOUNT;
+
+  const perStudentMap = new Map();
+  lessons.forEach(l => {
+    const student = state.students.find(s => String(s.id) === String(l.studentId));
+    const name = student ? student.name : 'Невідомий учень';
+    if (!perStudentMap.has(name)) {
+      perStudentMap.set(name, { name, completedCount: 0, paidCount: 0, paidSum: 0, unpaidCount: 0 });
+    }
+    const rec = perStudentMap.get(name);
+    rec.completedCount += 1;
+    if (l.paid) { rec.paidCount += 1; rec.paidSum += Number(l.paidAmount || 0); }
+    else rec.unpaidCount += 1;
+  });
+
+  const rows = Array.from(perStudentMap.values()).sort((a, b) => b.unpaidCount - a.unpaidCount || b.completedCount - a.completedCount);
+
+  let tableRows = rows.map(r => `
+    <tr>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${r.completedCount}</td>
+      <td>${r.paidCount} <span style="color:var(--text-muted);">(${r.paidSum} грн)</span></td>
+      <td>${r.unpaidCount > 0 ? `<strong style="color:#b91c1c;">${r.unpaidCount}</strong>` : '0'}</td>
+    </tr>
+  `).join('');
+
+  if (!tableRows) {
+    tableRows = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Немає проведених уроків за обраний період</td></tr>`;
+  }
+
+  elements.reportOutput.innerHTML = `
+    <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:8px;">Період: ${escapeHtml(formatDateDisplay(from))} — ${escapeHtml(formatDateDisplay(to))}</div>
+    <div class="stat-cards">
+      <div class="stat-card"><b>${lessons.length}</b><span>Проведено уроків</span></div>
+      <div class="stat-card"><b style="color:#15803d;">${paidLessons.length}</b><span>Оплачено (${paidSum} грн)</span></div>
+      <div class="stat-card"><b style="color:#b91c1c;">${unpaidLessons.length}</b><span>Не оплачено${unpaidLessons.length ? ` (≈${unpaidEstimate} грн)` : ''}</span></div>
+    </div>
+    <table class="report-table">
+      <thead><tr><th>Учень</th><th>Проведено</th><th>Оплачено</th><th>Не оплачено</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+    ${unpaidLessons.length ? '<div style="font-size:0.78rem; color:var(--text-muted); margin-top:8px;">* Сума за неоплачені уроки орієнтовна, з розрахунку ' + DEFAULT_PAID_AMOUNT + ' грн/урок.</div>' : ''}
+  `;
+}
+
+// Загальний звіт: усі уроки по учнях (незалежно від статусу).
+function renderSummaryReport(from, to) {
   const lessonsInRange = state.lessons.filter(l => l.date >= from && l.date <= to);
 
   const totalLessons = lessonsInRange.length;
@@ -1601,9 +1691,77 @@ function generateReport() {
       <tbody>${tableRows}</tbody>
     </table>
   `;
-
-  renderReportIssues();
 }
+
+// Заплановані уроки за період (включно з тими, чия дата вже минула - для контролю).
+function renderPlannedReport(from, to) {
+  const lessons = state.lessons.filter(l => l.date >= from && l.date <= to && l.status === 'planned');
+  const overdue = lessons.filter(l => isPastDate(l.date));
+
+  const sorted = lessons.slice().sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`));
+  let tableRows = sorted.map(l => {
+    const student = state.students.find(s => String(s.id) === String(l.studentId));
+    const isOverdue = isPastDate(l.date);
+    return `
+      <tr${isOverdue ? ' style="background:var(--pending-bg,#fef3c7);"' : ''}>
+        <td>${escapeHtml(student ? student.name : 'Невідомий учень')}</td>
+        <td>${escapeHtml(formatDateDisplay(l.date))}, ${escapeHtml(l.time || '')}</td>
+        <td>${escapeHtml(l.topic || '—')}</td>
+        <td>${isOverdue ? '<strong style="color:#b91c1c;">Дата минула</strong>' : 'Заплановано'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  if (!tableRows) {
+    tableRows = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Немає запланованих уроків за обраний період</td></tr>`;
+  }
+
+  elements.reportOutput.innerHTML = `
+    <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:8px;">Період: ${escapeHtml(formatDateDisplay(from))} — ${escapeHtml(formatDateDisplay(to))}</div>
+    <div class="stat-cards">
+      <div class="stat-card"><b>${lessons.length}</b><span>Заплановано уроків</span></div>
+      <div class="stat-card"><b style="color:${overdue.length ? '#b91c1c' : 'var(--text-strong)'};">${overdue.length}</b><span>Дата вже минула</span></div>
+    </div>
+    <table class="report-table">
+      <thead><tr><th>Учень</th><th>Дата і час</th><th>Тема</th><th>Статус</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  `;
+}
+
+// Звіт по способах оплати за період.
+function renderPaymentsReport(from, to) {
+  const lessonsInRange = state.lessons.filter(l => l.date >= from && l.date <= to && l.paid);
+  const byMethod = new Map();
+  let total = 0;
+
+  lessonsInRange.forEach(l => {
+    const method = l.paidMethod || 'Не вказано';
+    if (!byMethod.has(method)) byMethod.set(method, { method, count: 0, sum: 0 });
+    const rec = byMethod.get(method);
+    rec.count += 1;
+    rec.sum += Number(l.paidAmount || 0);
+    total += Number(l.paidAmount || 0);
+  });
+
+  const rows = Array.from(byMethod.values()).sort((a, b) => b.sum - a.sum);
+  let tableRows = rows.map(r => `<tr><td>${escapeHtml(r.method)}</td><td>${r.count}</td><td>${r.sum} грн</td></tr>`).join('');
+  if (!tableRows) tableRows = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted);">Немає оплат за обраний період</td></tr>`;
+
+  elements.reportOutput.innerHTML = `
+    <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:8px;">Період: ${escapeHtml(formatDateDisplay(from))} — ${escapeHtml(formatDateDisplay(to))}</div>
+    <div class="stat-cards">
+      <div class="stat-card"><b>${total} грн</b><span>Отримано всього</span></div>
+      <div class="stat-card"><b>${lessonsInRange.length}</b><span>Оплачених уроків</span></div>
+    </div>
+    <table class="report-table">
+      <thead><tr><th>Спосіб оплати</th><th>Кількість</th><th>Сума</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  `;
+}
+
+// ===================== ПЕРЕВІРКА ПОМИЛОК =====================
 
 function renderReportIssues() {
   const issues = [];
@@ -1626,12 +1784,12 @@ function renderReportIssues() {
     if (missing.length > 0) issues.push(`Учень "${s.name}": не заповнено — ${missing.join(', ')}.`);
   });
 
-  elements.reportIssues.innerHTML = '';
+  elements.issuesList.innerHTML = '';
   if (issues.length === 0) {
     const ok = document.createElement('div');
     ok.className = 'issue-item ok';
     ok.textContent = '✓ Помилок та незаповнених полів не знайдено.';
-    elements.reportIssues.appendChild(ok);
+    elements.issuesList.appendChild(ok);
     return;
   }
 
@@ -1639,7 +1797,7 @@ function renderReportIssues() {
     const el = document.createElement('div');
     el.className = 'issue-item';
     el.textContent = msg;
-    elements.reportIssues.appendChild(el);
+    elements.issuesList.appendChild(el);
   });
 }
 
@@ -1704,10 +1862,16 @@ function setupEventListeners() {
 
   elements.modalReportsBtn.onclick = () => {
     elements.settingsModal.classList.add('hidden');
-    elements.reportOutput.innerHTML = '';
-    renderReportIssues();
+    generateReport(); // одразу показуємо звіт за замовчуванням (проведені уроки: оплачені/неоплачені за поточний тиждень)
     elements.reportsModal.classList.remove('hidden');
   };
+
+  elements.modalIssuesBtn.onclick = () => {
+    elements.settingsModal.classList.add('hidden');
+    renderReportIssues();
+    elements.issuesModal.classList.remove('hidden');
+  };
+  elements.closeIssuesModalBtn.onclick = () => elements.issuesModal.classList.add('hidden');
 
   elements.modalAuditLogBtn.onclick = () => {
     elements.settingsModal.classList.add('hidden');
