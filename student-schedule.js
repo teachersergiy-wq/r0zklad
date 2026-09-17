@@ -395,8 +395,9 @@ function showLessonDetailModal(lesson) {
 
   const note = document.createElement('div');
   note.className = `payment-note ${isPaid ? 'paid' : 'unpaid'}`;
+  const isMathema = lesson.paidMethod === 'Mathema';
   note.textContent = isPaid
-    ? `Оплачено${lesson.paidAmount != null ? ' · ' + lesson.paidAmount + ' грн' : ''}${lesson.paidMethod ? ' · ' + lesson.paidMethod : ''}`
+    ? `Оплачено${(lesson.paidAmount != null && !isMathema) ? ' · ' + lesson.paidAmount + ' грн' : ''}${lesson.paidMethod ? ' · ' + lesson.paidMethod : ''}`
     : '⚠️ Урок ще не оплачено. Будь ласка, зв\'яжіться з викладачем щодо оплати.';
   els.lessonDetailBody.appendChild(note);
 
@@ -619,6 +620,14 @@ function renderPublicWeek() {
           timeEl.className = 'slot-lesson-time';
           timeEl.textContent = hourToTimeStr(e.start);
           el.appendChild(timeEl);
+
+          const studentForLesson = publicState.students.find(s => String(s.id) === String(lesson.studentId));
+          if (studentForLesson && studentForLesson.name) {
+            const studentEl = document.createElement('div');
+            studentEl.className = 'slot-lesson-student';
+            studentEl.textContent = studentForLesson.name;
+            el.appendChild(studentEl);
+          }
 
           if (lesson.topic) {
             const topicEl = document.createElement('div');
