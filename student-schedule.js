@@ -11,27 +11,51 @@ const DEFAULT_OPEN_HOUR = 18;
 const MAX_HOUR = 21;
 const THEME_STORAGE_KEY = 'schedule_theme_pref';
 
-// Legacy student-link migration: only known old student IDs are redirected to the new Rozklad page.
-// Unknown/missing IDs keep the original r0zklad behavior unchanged.
-const LEGACY_STUDENT_REDIRECTED = (() => {
-  const studentId = new URLSearchParams(window.location.search).get('student');
-  if (!studentId) return false;
-  const tokenByOldStudentId = {
-    '1788638397053': '32d78dd8-4b66-4b6c-8629-6c08e70dc879',
-    '1789312956388': '034a8876-c023-4b0e-ab7d-560216921d9b',
-    '1788638296389': 'c734e43d-1af8-443c-9ed8-ad9ea514e88c',
-    '1788638220702': 'abad7a88-3184-4ca2-9464-9f3c80e8d8da',
-    '1788638338677': '8d96930a-c94a-4d80-a87f-231274e8b35a',
-    '1788638193054': '60fb1860-cc23-4b7c-ad23-83367816a08f',
-    '1790111157801': '48b5c460-0261-4521-83bf-0fb43e130a10',
-    '1788638611341': '43f4d0dc-e4f5-4d9e-93da-847c157df638',
-    '1788638250661': 'b0b4bdfa-23a6-4291-ac91-50ffc0110e5a'
+// Legacy-link bridge. Keep this switch as the one-line rollback control.
+const REDIRECT_TO_V2 = true;
+const LEGACY_REDIRECT_STARTED = (() => {
+  const params = new URLSearchParams(window.location.search);
+  const oldKey = params.get('key');
+  const oldStudentId = params.get('student');
+  if (!REDIRECT_TO_V2 || !oldKey || !oldStudentId || !db || !document.body) return false;
+
+  const body = document.body;
+  const previousVisibility = body.style.visibility;
+  const status = document.createElement('div');
+  status.textContent = 'Перенаправлення…';
+  status.setAttribute('role', 'status');
+  status.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:#1e293b;font:600 16px system-ui,sans-serif;';
+  body.style.visibility = 'hidden';
+  status.style.visibility = 'visible';
+  body.appendChild(status);
+
+  let settled = false;
+  const fallback = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeoutId);
+    status.remove();
+    body.style.visibility = previousVisibility;
   };
-  const token = tokenByOldStudentId[String(studentId)];
-  if (!token) return false;
-  const target = new URL('https://teachersergiy-wq.github.io/Rozklad/student-schedule.html');
-  target.searchParams.set('token', token);
-  window.location.replace(target.toString());
+  const timeoutId = setTimeout(fallback, 4000);
+
+  Promise.resolve(db.rpc('v2_resolve_legacy_student_link', {
+    p_old_key: oldKey,
+    p_old_student_id: oldStudentId
+  })).then(({ data, error }) => {
+    if (settled) return;
+    const token = !error && typeof data === 'string' ? data : null;
+    if (!token) {
+      fallback();
+      return;
+    }
+    settled = true;
+    clearTimeout(timeoutId);
+    const target = new URL('https://teachersergiy-wq.github.io/Rozklad/student-schedule.html');
+    target.searchParams.set('token', token);
+    window.location.replace(target.toString());
+  }).catch(fallback);
+
   return true;
 })();
 
