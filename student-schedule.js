@@ -39,7 +39,7 @@ const LEGACY_REDIRECT_STARTED = (() => {
   };
   const timeoutId = setTimeout(fallback, 4000);
 
-  Promise.resolve(db.rpc('v2_resolve_legacy_student_link', {
+  Promise.resolve().then(() => db.rpc('v2_resolve_legacy_student_link', {
     p_old_key: oldKey,
     p_old_student_id: oldStudentId
   })).then(({ data, error }) => {
